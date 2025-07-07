@@ -1,6 +1,6 @@
 # GlobalMix-TB-analysis
 **Contributors** <br/>
-*Kristin Nelson <sup>1</sup>, Machi Shiiba <sup>1</sup>, Ben Lopman <sup>1</sup>
+*Kristin Nelson <sup>1</sup>, Machi Shiiba <sup>1</sup>, Ben Lopman <sup>1</sup>*
 
 *<sup>1</sup> Emory University Rollins School of Public Health, Atlanta, GA, USA* <br/>
 
