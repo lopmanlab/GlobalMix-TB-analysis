@@ -7,7 +7,7 @@
 *Correspondence to Kristin Nelson (knbratt@emory.edu)*
 
 # Description of study
-**Aim**
+**Aim**  
 To evaluate patterns and locations of contact relevant to Mtb transmission using data from GlobalMix study.
 
 The protocol that contains the detailed data collection procedure in GlobalMix study is explained in Aguolu et al (2024).<sup>1</sup>
@@ -23,13 +23,13 @@ Folders are arranged as follows.
 6. Scripts
 7. Codebook
 
-Each country folder contains 'participants', 'contact diary', and 'casual contact' datasets, which contain information about the study participants, their reported close individual contacts, and their reported casual contacts respectively. The Other folder contains the clean datasets used for the analysis.
+Each country folder contains 'participants', 'contact diary', and 'casual contact' datasets, which contain information about the study participants, their reported close individual contacts, and their reported casual contacts respectively. The Other folder contains the clean datasets from outside of GlobalMix study used for the analysis.
 The scripts folder has scripts used for the analysis of the "Characterizing social behavior relevant for tuberculosis transmission in four low- and middle-income countries". The Codebook folder contains codebooks explaining the variables in the datasets.
 
 The participant, contact diary, and casual contact datasets are named as follows;
 - country-code_participant_data_aim1.RDS
 - country-code_contact_data_aim1.RDS
-- country-code_locations_visited_aim1.RDS
+- country-code_locations_visited_data_aim1.RDS
 
 Country codes are **gt** (Guatemala), **ind** (India), **moz** (Mozambique), **pak** (Pakistan).
 
