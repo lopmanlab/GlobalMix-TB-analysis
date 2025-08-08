@@ -1,8 +1,11 @@
 # GlobalMix-TB-analysis
 **Contributors** <br/>
-*Kristin Nelson <sup>1</sup>, Machi Shiiba <sup>1</sup>, Ben Lopman <sup>1</sup>*
+*Kristin Nelson <sup>1</sup>, Machi Shiiba <sup>1</sup>, Rajan Srinivsasan <sup>2</sup>, Tyler Brown <sup>3</sup>, Leonardo Martinez <sup>4</sup>, Ben Lopman <sup>1</sup>*
 
 *<sup>1</sup> Department of Epidemiology, Emory University Rollins School of Public Health, Atlanta, GA, USA* <br/>
+*<sup>2</sup>* <br/>
+*<sup>3</sup>* <br/>
+*<sup>4</sup>* <br/>
 
 *Correspondence to Kristin Nelson (knbratt@emory.edu)*
 
