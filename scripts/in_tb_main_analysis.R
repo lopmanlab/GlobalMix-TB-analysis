@@ -285,7 +285,7 @@ in_community_tb <- rbind(inr_community_tb, inu_community_tb)%>%
             n = sum(n, na.rm = T))
 
 in_tb_eh_comb <- rbind(in.co.eh.tbwe, in_community_tb)%>%
-  group_by(participant_age, participant_sex, contact_age, contact_sex)%>%
+  group_by(participant_age, contact_age)%>%
   summarise(eh_we = sum(eh_we, na.rm = T),
             n = sum(n, na.rm = T))%>%
   mutate(eh_mean = eh_we/n)%>%
@@ -294,25 +294,97 @@ in_tb_eh_comb <- rbind(in.co.eh.tbwe, in_community_tb)%>%
 
 ## Plot in bar plot ----
 in_tb_eh_comb%>%
-  ggplot(aes(x = interaction(participant_sex, participant_age), y = eh_mean, fill = contact_age, pattern = contact_sex)) +
-  geom_bar_pattern(
+  ggplot(aes(x = participant_age, y = eh_mean, fill = contact_age)) +
+  geom_bar(
     position = "fill",
     stat = "identity",
-    color = "black",
-    pattern_type = "stripe",
-    pattern_density = 0.2,
-    pattern_spacing = 0.05,
-    show.legend = c(pattern = TRUE, fill = TRUE)
+    color = "black"
   ) +
-  scale_fill_discrete(name = "Contact Age", guide = guide_legend(override.aes = list(pattern = "none"))) +
-  scale_pattern_manual(name = "Contact Sex", values = c("Male" = "none", "Female" = "stripe"))+
+  scale_fill_manual(name = "Contact Age",
+                    values = c( "#D6604D","#FDAE61","#91CF60","#7FBFBD","#4393C3","#8073AC","pink")
+  ) +
   theme_minimal()+
-  theme(axis.text.x = element_text(angle = 90),
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
         legend.key.size = unit(0.5, "cm"),
-        legend.key = element_rect(fill = "white", colour = "black")
+        legend.key = element_rect(fill = "white", colour = "black"),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        title = element_text(size = 18)
   )+
   theme(plot.margin = margin(t = 20, r = 10, b = 10, l = 10))+
-  labs(title = "India", x = "Participant age and sex", y = "Proportion of exposure-hours")-> in.agesex.eh.plot
+  labs(title = "India", x = "Participant age", y = "Proportion of exposure-hours")-> in.age.eh.plot
+
+
+##matrix
+in_tb_eh_comb%>%
+  ggplot(aes(x = participant_age, y = contact_age, fill = pmin(eh_mean, 50)))+
+  scale_fill_distiller(palette = "Blues",
+                       direction = 1,
+                       #limits=c(0, 5), 
+                       name = "Proportion") +
+  geom_tile(color = "white", show.legend = FALSE,
+            lwd = 1.5,
+            linetype = 1)+
+  geom_shadowtext(aes(label = sprintf("%.1f", eh_mean)),  
+                  color = "black", 
+                  bg.color = "white", 
+                  size = 10, 
+                  bg.r = 0.15)+
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        title = element_text(size = 18))+
+  labs(title = "India", x = "Participant age", y = "Contact age")
+
+## Exposure matrix by sex ----
+in_tb_eh_mat_sex <- rbind(in.co.eh.tbwe, in_community_tb)%>%
+  group_by(participant_sex, contact_sex)%>%
+  summarise(eh_we = sum(eh_we, na.rm = T),
+            n = sum(n, na.rm = T))%>%
+  mutate(eh_mean = eh_we/n)
+
+in_tb_eh_mat_sex%>%
+  ggplot(aes(x = participant_sex, y = contact_sex, fill = eh_mean))+
+  scale_fill_distiller(palette = "Blues",
+                       direction = 1,
+                       #limits=c(0, 5), 
+                       name = "Proportion") +
+  geom_tile(color = "white", show.legend = FALSE,
+            lwd = 1.5,
+            linetype = 1)+
+  geom_shadowtext(aes(label = sprintf("%.1f", eh_mean)),  
+                  color = "black", 
+                  bg.color = "white", 
+                  size = 10, 
+                  bg.r = 0.15)+
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        title = element_text(size = 18))+
+  labs(title = "India", x = "Participant sex", y = "Contact sex") -> in.mat.sex.plot
+
+
+## Calculate assortativity ----
+age_levels <- c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")
+
+in_age_mat <- in_tb_eh_comb%>%
+  select(participant_age, contact_age, eh_mean)%>%
+  pivot_wider(names_from = "participant_age", values_from = "eh_mean")%>%
+  arrange(factor(contact_age, levels = age_levels)) %>%
+  select(contact_age, all_of(age_levels))
+
+in_age_mat$contact_age <- NULL
+rownames(in_age_mat) <- colnames(in_age_mat)
+
+in_age_ass <- sam_index_q(in_age_mat)
+
+in_sex_mat <- in_tb_eh_mat_sex%>%
+  select(participant_sex, contact_sex, eh_mean)%>%
+  pivot_wider(names_from = "participant_sex", values_from = "eh_mean")
+
+in_sex_mat$contact_sex <- NULL
+rownames(in_sex_mat) <- colnames(in_sex_mat)
+
+in_sex_ass <- index_q(in_sex_mat)
 
 # Figure 3 and Supplemental figure 1: Proportion of exposure-hours for location of community contacts ---------------------------
 denoms.byagesex.loc.in <- in_loc_ed%>%
@@ -577,9 +649,9 @@ in_str_plot <- ggplot(in_cont_count, aes(x = survey_date))+
   xlab(" ")+
   ylab(" ")+
   theme_minimal()+
-  theme(axis.text = element_text(size = 15),
+  theme(axis.text = element_text(size = 17),
         axis.title = element_text(size = 20),
         title = element_text(size = 20),
         strip.text = element_text(size = 20),
-        legend.text = element_text(size = 15),
+        legend.text = element_text(size = 17),
         plot.background = element_rect(color = "white"))
