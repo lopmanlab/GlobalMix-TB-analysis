@@ -8,6 +8,7 @@ gt.co <- readRDS("./Guatemala/gt_contact_data_aim1.RDS")
 gt.we <- read.csv("./Other/gt_pop.csv")
 
 stringency <- read.csv("./Other/OxCGRT_compact_national_v1.csv", header = T)
+prem <- read.csv("./Other/synthetic_contacts_2021.csv", header = T)
 
 # Clean the data ----------------------------------------------------------------
 # Standardize the data across countries and merge participants information
@@ -100,7 +101,7 @@ gt.type.value.med <- rbind(gt.ind.type, gt.loc.type)%>%
 ## Summary figure is in the summary script
 
 
-# Figure 2 and supp 2: Exposure profiles by age and sex --------------------------------------
+# Figure 2 and supp 1: Exposure profiles by age and sex --------------------------------------
 ## Calculate age and sex distribution ----
 gt.pa.we <- gt.pa%>%
   mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
@@ -111,14 +112,9 @@ gt.pa.we <- gt.pa%>%
   summarise(n_s = n())%>%
   mutate(prop_s = n_s/sum(n_s))
 
-gtr.we <- gt.we%>%
+gt.we.ru <- gt.we%>%
   left_join(gt.pa.we, by = c("participant_age", "study_site"))%>%
-  mutate(psweight = prop/prop_s)%>%
-  filter(study_site == "Rural")
-gtu.we <- gt.we%>%
-  left_join(gt.pa.we, by = c("participant_age", "study_site"))%>%
-  mutate(psweight = prop/prop_s)%>%
-  filter(study_site == "Urban")
+  mutate(psweight = prop/prop_s)
 
 ## Create a framework for location dataset ----
 loc_frame2 <- gt_loc_ed%>%
@@ -127,63 +123,50 @@ loc_frame2 <- gt_loc_ed%>%
                                      participant_age == "6-11mo" ~ "<5y",
                                      participant_age == "1-4y" ~ "<5y",
                                      TRUE ~ participant_age))%>%
-  group_by(place_visited, participant_age, participant_sex)%>%
+  group_by(place_visited, participant_age, participant_sex, study_site)%>%
   summarise(count = n())%>%
   ungroup()%>%
-  tidyr::expand(participant_age, participant_age, participant_sex, participant_sex, place_visited) %>%
-  setNames(c("participant_age", "contact_age", "participant_sex", "contact_sex","place_visited"))%>%
+  tidyr::expand(participant_age, participant_age, participant_sex, participant_sex, place_visited, study_site) %>%
+  setNames(c("participant_age", "contact_age", "participant_sex", "contact_sex","place_visited", "study_site"))%>%
   filter(!is.na(place_visited))%>%
   filter(place_visited != "Home")
 
 
-gtr_loc_we <- gt_loc_ed%>%
+gt.pa.ext <- gt.pa%>%
+  select(rec_id, study_site, participant_age, participant_sex)%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age))
+
+loc_frame_p <- loc_frame2%>%
+  filter(!is.na(contact_age) & !is.na(contact_sex))%>%
+  right_join(gt.pa.ext, by = c("study_site", "participant_age", "participant_sex"))
+
+
+gt_loc_we <- gt_loc_ed%>%
   filter(place_visited != "Home")%>%
-  filter(study_site == "Rural")%>%
   mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
                                      participant_age == "6-11mo" ~ "<5y",
                                      participant_age == "1-4y" ~ "<5y",
                                      TRUE ~ participant_age))%>%
-  left_join(gtr.we, by = "participant_age")%>%
+  left_join(gt.we.ru, by = c("participant_age", "study_site"))%>%
+  filter(!is.na(participant_age))%>%
   as_survey_design(weights = psweight)
 
-gtr_loc_agesex <- gtr_loc_we%>%
-  group_by(participant_age, participant_sex, place_visited)%>%
+gt_loc_agesex <- gt_loc_we%>%
+  group_by(participant_age, participant_sex, place_visited, study_site)%>%
   summarise(count = survey_total(),
             spent_time = survey_mean(spent_time, na.rm = T))%>%
   rename(contact_age = participant_age,
          contact_sex = participant_sex)%>%
-  group_by(place_visited)%>%
+  group_by(place_visited, study_site)%>%
   mutate(total_count = sum(count))%>%
   ungroup()%>%
   mutate(agesex_dist = count/total_count)%>%
-  right_join(loc_frame2, by = c("contact_age", "contact_sex","place_visited"))%>%
+  right_join(loc_frame2, by = c("contact_age", "contact_sex","place_visited", "study_site"))%>%
   mutate(agesex_dist = replace_na(agesex_dist, 0))%>%
-  select(participant_age, participant_sex, contact_age, contact_sex, place_visited, agesex_dist)
-
-
-gtu_loc_we <- gt_loc_ed%>%
-  filter(place_visited != "Home")%>%
-  filter(study_site == "Urban")%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age))%>%
-  left_join(gtu.we, by = "participant_age")%>%
-  as_survey_design(weights = psweight)
-
-gtu_loc_agesex <- gtu_loc_we%>%
-  group_by(participant_age, participant_sex, place_visited)%>%
-  summarise(count = survey_total(),
-            spent_time = survey_mean(spent_time, na.rm = T))%>%
-  rename(contact_age = participant_age,
-         contact_sex = participant_sex)%>%
-  group_by(place_visited)%>%
-  mutate(total_count = sum(count))%>%
-  ungroup()%>%
-  mutate(agesex_dist = count/total_count)%>%
-  right_join(loc_frame2, by = c("contact_age", "contact_sex","place_visited"))%>%
-  mutate(agesex_dist = replace_na(agesex_dist, 0))%>%
-  select(participant_age, participant_sex, contact_age, contact_sex, place_visited, agesex_dist)
+  select(participant_age, participant_sex, contact_age, contact_sex, place_visited, study_site, agesex_dist)
 
 
 ## TB-weight ----
@@ -194,78 +177,81 @@ gt.tb.inc <- data.frame(
                   "Male", "Female", "Male", "Female", "Male", "Female", "Male", "Female"),
   tb_weight = c(210/5900, 180/5900, 250/5900, 250/5900, (250+430)/2/5900, (250+290)/2/5900,
                 (430+690)/2/5900, (290+400)/2/5900, (690+580)/2/5900, (400+370)/2/5900,
-                (580+430+380)/3/5900, (370+380+370)/3/5900,(380+400)/2/5900, (370+290)/2/5900)
+                (580+430+380)/3/5900, (370+380+370)/3/5900,(380+400)/2/5900, (370+290)/2/5900),
+  tb_lower = c(12/5900, 10/5900, 14/5900, 14/5900, (14+24)/2/5900, (14+16)/2/5900,
+               (24+39)/2/5900, (16+23)/2/5900, (39+33)/2/5900, (23+21)/2/5900, 
+               (33+24+22)/3/5900, (21+22+21)/5900, (22+22)/2/5900, (21+16)/2/5900),
+  tb_upper = c(410/5900, 350/5900, 490/5900, 480/5900, (490+840)/2/5900, (480+560)/2/5900,
+               (840+1300)/2/5900, (560+780)/2/5900, (1300+1100)/2/5900, (780+730)/2/5900,
+               (1100+840+740)/3/5900, (730+750+720)/3/5900,(740+770)/2/5900, (720+560)/2/5900)
 )
+
+gt.tb.inc$norm_tb_weight <- gt.tb.inc$tb_weight / mean(gt.tb.inc$tb_weight)
 
 
 ## Individual contact exposure hours ----
+gt.co.group <- gt.pa%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age))%>%
+  distinct(participant_age, participant_sex)%>%
+  rename(contact_age = participant_age,
+         contact_sex = participant_sex)
+
+loc_frame3 <- gt.pa%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age))%>%
+  select(rec_id, participant_age, participant_sex)%>%
+  crossing(gt.co.group)%>%
+  filter(!is.na(contact_age) & !is.na(contact_sex))
+
+
 gt.co.eh.tbwe <- gt.co.pa.counts%>%
   filter(!is.na(participant_age)&!is.na(participant_sex)&!is.na(contact_age)&!is.na(contact_sex))%>%
   left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
-  group_by(participant_age, participant_sex, contact_age, contact_sex)%>%
-  summarise(eh_we = sum(cont_time*tb_weight))%>%
-  left_join(denoms.byagesex.gt, by = c("participant_age", "participant_sex"))%>%
+  group_by(rec_id, participant_age, participant_sex, contact_age, contact_sex)%>%
+  summarise(eh_we = sum(cont_time/60*tb_weight))%>%
+  right_join(loc_frame3, by = c("rec_id", "participant_age", "participant_sex", "contact_age", "contact_sex"))%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")),
-         contact_age = factor(contact_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))
+         contact_age = factor(contact_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
+  mutate(eh_we = replace_na(eh_we, 0))
 
 ## Community contact exposure hours ----
-gtr_community_tb <- gt_loc_ed%>%
+gt_community_tb <- gt_loc_ed%>%
   select(rec_id, place_visited, participant_age, participant_sex, spent_time, num_pax_place, study_day, study_site)%>%
   filter(place_visited != "Home")%>%
-  filter(study_site == "Rural")%>%
   mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
                                      participant_age == "6-11mo" ~ "<5y",
                                      participant_age == "1-4y" ~ "<5y",
                                      TRUE ~ participant_age))%>%
-  left_join(gtr_loc_agesex, by = c("participant_age", "participant_sex","place_visited"))%>%
+  left_join(gt_loc_agesex, by = c("participant_age", "participant_sex","place_visited", "study_site"))%>%
   left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
-  mutate(eh_we = spent_time*num_pax_place*agesex_dist*tb_weight)%>%
-  group_by(participant_age, participant_sex, contact_age, contact_sex)%>%
-  summarise(eh_we = sum(eh_we, na.rm = T))%>%
-  mutate(study_site = "Rural")
-
-
-gtu_community_tb <- gt_loc_ed%>%
-  select(rec_id, place_visited, participant_age, participant_sex, spent_time, num_pax_place, study_day, study_site)%>%
-  filter(place_visited != "Home")%>%
-  filter(study_site == "Urban")%>%
-  filter(!is.na(participant_sex))%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age))%>%
-  left_join(gtu_loc_agesex, by = c("participant_age", "participant_sex","place_visited"))%>%
-  left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
-  mutate(eh_we = spent_time*num_pax_place*agesex_dist*tb_weight)%>%
-  group_by(participant_age, participant_sex, contact_age, contact_sex)%>%
-  summarise(eh_we = sum(eh_we, na.rm = T))%>%
-  mutate(study_site = "Urban")
-
-gt_loc_part2 <- gt_loc_ed %>%
-  distinct(rec_id, study_day, study_site, participant_age, participant_sex)%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age))%>%
-  group_by(study_site, participant_age, participant_sex)%>%
-  summarise(n = n())
-
-gt_community_tb <- rbind(gtr_community_tb, gtu_community_tb)%>%
-  left_join(gt_loc_part2, by = c("study_site", "participant_age", "participant_sex"))%>%
-  group_by(participant_age, participant_sex, contact_age, contact_sex)%>%
-  summarise(eh_we = sum(eh_we, na.rm = T),
-            n = sum(n, na.rm = T))
+  mutate(eh_we = spent_time/60*num_pax_place*agesex_dist*tb_weight)%>%
+  filter(!is.na(eh_we))%>%
+  right_join(loc_frame_p, by = c("rec_id", "participant_age", "participant_sex", "contact_age", "contact_sex", "study_site", "place_visited"))%>%
+  mutate(eh_we = replace_na(eh_we, 0))
 
 gt_tb_eh_comb <- rbind(gt.co.eh.tbwe, gt_community_tb)%>%
+  group_by(rec_id, participant_age, contact_age)%>%
+  summarise(eh_we = sum(eh_we, na.rm = T))%>%
+  filter(!is.na(contact_age) & !is.na(participant_age))%>%
+  ungroup()%>%
   group_by(participant_age, contact_age)%>%
-  summarise(eh_we = sum(eh_we, na.rm = T),
-            n = sum(n, na.rm = T))%>%
-  mutate(eh_mean = eh_we/n)%>%
+  summarise(eh_mean = mean(eh_we, na.rm = T),
+            sd_eh   = sd(eh_we, na.rm = TRUE),
+            n       = n(),
+            se      = sd_eh / sqrt(n),
+            lower   = eh_mean - 1.96 * se,
+            upper   = eh_mean + 1.96 * se)%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")),
          contact_age = factor(contact_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))
 
 ## Plot in bar plot ----
 gt_tb_eh_comb%>%
+  filter(!is.na(participant_age) & !is.na(contact_age))%>%
   ggplot(aes(x = participant_age, y = eh_mean, fill = contact_age)) +
   geom_bar(
     position = "fill",
@@ -285,15 +271,49 @@ gt_tb_eh_comb%>%
         title = element_text(size = 18)
   )+
   theme(plot.margin = margin(t = 20, r = 10, b = 10, l = 10))+
-  labs(title = "Guatemala", x = "Participant age", y = "Proportion of exposure-hours")-> gt.age.eh.plot
+  labs(title = "Guatemala, Q = -0.078", x = "Participant age", y = "Proportion of exposure-hours")-> gt.age.eh.plot
 
 
 ## Exposure matrix by sex ----
-gt_tb_eh_mat_sex <- rbind(gt.co.eh.tbwe, gt_community_tb)%>%
+# Individual contact
+gt.co.eh.tbwe2 <- gt.co.pa.counts%>%
+  filter(!is.na(participant_age)&!is.na(participant_sex)&!is.na(contact_age)&!is.na(contact_sex))%>%
+  left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
+  group_by(rec_id, participant_age, participant_sex, contact_age, contact_sex)%>%
+  summarise(eh_we = sum(cont_time/60*norm_tb_weight))%>%
+  right_join(loc_frame3, by = c("rec_id", "participant_age", "participant_sex", "contact_age", "contact_sex"))%>%
+  mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")),
+         contact_age = factor(contact_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
+  mutate(eh_we = replace_na(eh_we, 0))
+
+# Community contact
+gt_community_tb2 <- gt_loc_ed%>%
+  select(rec_id, place_visited, participant_age, participant_sex, spent_time, num_pax_place, study_day, study_site)%>%
+  filter(place_visited != "Home")%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age))%>%
+  left_join(gt_loc_agesex, by = c("participant_age", "participant_sex","place_visited", "study_site"))%>%
+  left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
+  mutate(eh_we = spent_time/60*num_pax_place*agesex_dist*norm_tb_weight)%>%
+  filter(!is.na(eh_we))%>%
+  right_join(loc_frame_p, by = c("rec_id", "participant_age", "participant_sex", "contact_age", "contact_sex", "study_site", "place_visited"))%>%
+  mutate(eh_we = replace_na(eh_we, 0))
+
+
+gt_tb_eh_mat_sex <- rbind(gt.co.eh.tbwe2, gt_community_tb2)%>%
+  filter(!is.na(study_day))%>%
+  group_by(rec_id, participant_sex, contact_sex, study_day)%>%
+  summarise(eh_we = sum(eh_we, na.rm = T))%>%
   group_by(participant_sex, contact_sex)%>%
-  summarise(eh_we = sum(eh_we, na.rm = T),
-            n = sum(n, na.rm = T))%>%
-  mutate(eh_mean = eh_we/n)
+  summarise(eh_mean = mean(eh_we),
+            eh_sd = sd(eh_we),
+            n = n(),
+            eh_se = eh_sd / sqrt(n),
+            ci_lower = eh_mean - 1.96 * eh_se,
+            ci_upper = eh_mean + 1.96 * eh_se
+  )
 
 gt_tb_eh_mat_sex%>%
   ggplot(aes(x = participant_sex, y = contact_sex, fill = eh_mean))+
@@ -304,7 +324,10 @@ gt_tb_eh_mat_sex%>%
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1)+
-  geom_shadowtext(aes(label = sprintf("%.1f", eh_mean)),  
+  geom_shadowtext(
+    aes(label = paste0(sprintf("%.1f", eh_mean), "\n(", 
+                       sprintf("%.1f", ci_lower), ", ", 
+                       sprintf("%.1f", ci_upper), ")")),
                   color = "black", 
                   bg.color = "white", 
                   size = 10, 
@@ -312,7 +335,30 @@ gt_tb_eh_mat_sex%>%
   theme(axis.text = element_text(size = 16),
         axis.title = element_text(size = 18),
         title = element_text(size = 18))+
-  labs(title = "Guatemala", x = "Participant sex", y = "Contact sex") -> gt.mat.sex.plot
+  labs(title = "Guatemala, Q = 0.07", x = "Participant sex", y = "Contact sex") -> gt.mat.sex.plot
+
+
+
+
+## Proportion of exposure-hours to women vs men
+rbind(gt.co.eh.tbwe, gt_community_tb)%>%
+  group_by(rec_id, participant_age, contact_sex)%>%
+  summarise(eh_we = sum(eh_we, na.rm = T))%>%
+  filter(!is.na(contact_sex) & !is.na(participant_age))%>%
+  ungroup()%>%
+  mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
+  group_by(participant_age, contact_sex)%>%
+  summarise(eh_mean = mean(eh_we, na.rm = T),
+            sd_eh   = sd(eh_we, na.rm = TRUE),
+            n       = n(),
+            se      = sd_eh / sqrt(n),
+            lower   = eh_mean - 1.96 * se,
+            upper   = eh_mean + 1.96 * se)%>%
+  group_by(participant_age)%>%
+  mutate(total = sum(eh_mean))%>%
+  group_by(participant_age, contact_sex)%>%
+  mutate(prop = eh_mean/total)
+
 
 
 ## Calculate assortativity ----
@@ -340,52 +386,45 @@ gt_sex_ass <- index_q(gt_sex_mat)
 
 
 # Figure 3 and Supplemental figure 1: Proportion of exposure-hours for location of community contacts ---------------------------
-gtr_loc_community_eh <- gt_loc_ed%>%
-  select(rec_id, place_visited, participant_age, participant_sex, spent_time, num_pax_place, study_day, study_site)%>%
+denoms.byagesex.loc.gt <- gt_loc_ed%>%
   filter(place_visited != "Home")%>%
-  filter(study_site == "Rural")%>%
+  filter(!is.na(participant_age))%>%
   filter(!is.na(participant_sex))%>%
   mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
                                      participant_age == "6-11mo" ~ "<5y",
                                      participant_age == "1-4y" ~ "<5y",
                                      TRUE ~ participant_age))%>%
-  left_join(gtr_loc_agesex, by = c("participant_age", "participant_sex","place_visited"))%>%
-  left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
-  mutate(eh_we = spent_time*num_pax_place*agesex_dist*tb_weight)%>%
-  group_by(participant_age, participant_sex, place_visited)%>%
-  summarise(ex_hour = sum(eh_we, na.rm = T))
+  group_by(place_visited, participant_age, participant_sex)%>%
+  summarise(n_part = n())
 
-gtu_loc_community_eh <- gt_loc_ed%>%
+
+
+gt_loc_community_eh <- gt_loc_ed%>%
   select(rec_id, place_visited, participant_age, participant_sex, spent_time, num_pax_place, study_day, study_site)%>%
   filter(place_visited != "Home")%>%
-  filter(study_site == "Urban")%>%
   filter(!is.na(participant_sex))%>%
   mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
                                      participant_age == "6-11mo" ~ "<5y",
                                      participant_age == "1-4y" ~ "<5y",
                                      TRUE ~ participant_age))%>%
-  left_join(gtu_loc_agesex, by = c("participant_age", "participant_sex","place_visited"))%>%
+  left_join(gt_loc_agesex, by = c("participant_age", "participant_sex","place_visited", "study_site"))%>%
   left_join(gt.tb.inc, by = c("contact_age", "contact_sex"))%>%
-  mutate(eh_we = spent_time*num_pax_place*agesex_dist*tb_weight)%>%
-  group_by(participant_age, participant_sex, place_visited)%>%
-  summarise(ex_hour = sum(eh_we, na.rm = T))
-
-gt_loc_community_eh <- rbind(gtr_loc_community_eh, gtu_loc_community_eh)%>%
+  mutate(eh_we = spent_time*num_pax_place*agesex_dist*tb_weight,
+         eh_we_low = spent_time*num_pax_place*agesex_dist*tb_lower,
+         eh_we_up = spent_time*num_pax_place*agesex_dist*tb_upper)%>%
   group_by(participant_age, place_visited)%>%
-  summarise(ex_hour = sum(ex_hour))%>%
+  summarise(ex_hour = sum(eh_we, na.rm = T),
+            ex_hour_low = sum(eh_we_low, na.rm = T),
+            ex_hour_up = sum(eh_we_up, na.rm = T))%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
   group_by(participant_age)%>%
   mutate(total = sum(ex_hour),
-         prop = ex_hour/total*100)%>%
+         prop = ex_hour/total,
+         total_low = sum(ex_hour_low),
+         prop_low = ex_hour_low/total_low,
+         total_up = sum(ex_hour_up),
+         prop_up = ex_hour_up/total_up)%>%
   mutate(country = "Guatemala")
-
-gt_loc_community_eh_comb <- gt_loc_community_eh%>%
-  group_by(place_visited)%>%
-  summarise(ex_hour = sum(ex_hour, na.rm = T))%>%
-  mutate(total = sum(ex_hour),
-         prop = ex_hour/total*100)%>%
-  mutate(rank = dense_rank(desc(prop)),
-         country = "Guatemala")
 
 
 # Main text input --------------------------------------------------------------------
@@ -458,20 +497,17 @@ gt.co %>%
   mutate(prop = count / sum(count))
 
 # Supplemental table 2: Median number of contacts by participant demographics --------------
-gt.we.comb <- rbind(gtr.we, gtu.we)
-
-# add participant data to contact data
 gt.co.pa.full <-  full_join(gt.co, gt.pa.age, 
                             by = c("rec_id", "study_site")) %>%
   mutate(contact = ifelse(is.na(survey_date), 0, 1))%>% #survey_date is complete for all contacts, so this is an indicator variable for whether an observation corresponds to a contact.
   # not all participants reported contacts, so this variable is 0 if the observation represents a participant that did not report any contacts.
-  count(study_day, contact, name = "num_contacts")%>%
-  filter(contact == 1)
+  count(study_day, contact, name = "num_contacts")
 
 gt.co.pa <- left_join(gt.pa.age, gt.co.pa.full, by = "rec_id") %>%
   mutate(num_contacts = ifelse(is.na(num_contacts), 0, num_contacts))%>%
-  left_join(gt.we.comb%>%select(psweight, participant_age, study_site), by = c("participant_age", "study_site"))%>%
-  mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))
+  left_join(gt.we.ru%>%select(psweight, participant_age, study_site), by = c("participant_age", "study_site"))%>%
+  mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
+  filter(!is.na(participant_age))
 
 
 ## Close contacts ----
@@ -496,6 +532,14 @@ gt.co.pa%>%
             lower_q = quantile(num_contacts, 0.25, na.rm = T),
             upper_q = quantile(num_contacts, 0.75, na.rm = T))
 
+
+### Statistical test for contact's sex difference ------------------------------
+gt.co.pa.test <- gt.co.pa%>%
+  filter(!is.na(participant_sex))
+
+wilcox.test(num_contacts ~ participant_sex, data = gt.co.pa.test)
+
+
 ## Casual contacts ----
 # Contact overall
 gt_loc_ed%>%
@@ -506,7 +550,7 @@ gt_loc_ed%>%
   group_by(rec_id, study_day, study_site, participant_age)%>%
   summarise(num_pax_place = sum(num_pax_place))%>%
   ungroup()%>%
-  left_join(gt.we.comb%>%select(psweight, participant_age, study_site), by = c("participant_age", "study_site"))%>%
+  left_join(gt.we.ru%>%select(psweight, participant_age, study_site), by = c("participant_age", "study_site"))%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
   filter(!is.na(participant_age))%>%
   as_survey(weights = c(psweight))%>%
@@ -568,7 +612,7 @@ gt_combined_count%>%
             n = survey_total(),
             q = survey_quantile(total_contact, c(0.25, 0.75), na.rm = T))
 
-# Supplemental figure 3: Daily number of contacts with stringency index -----------------------------------------------------------
+# Supplemental figure 2: Daily number of contacts with stringency index -----------------------------------------------------------
 gt.stringency <- stringency%>%
   mutate(survey_date = ymd(Date))%>%
   filter(CountryName == "Guatemala")
@@ -598,3 +642,307 @@ gt_str_plot <- ggplot(gt_cont_count, aes(x = survey_date))+
         strip.text = element_text(size = 20),
         legend.text = element_text(size = 17),
         plot.background = element_rect(color = "white"))
+
+# Comparison with Prem data ------------------------------------------------------
+## Panel A ------------------------------------------------
+## Prepare Prem data
+gt.prem <- prem%>%
+  filter(iso3c == "GTM" & setting == "overall" & location_contact == "all")%>%
+  rename(country = iso3c,
+         participant_age = age_contactor,
+         contact_age = age_cotactee,
+         contact_rate = mean_number_of_contacts)%>%
+  mutate(participant_age = gsub(" to ", "-", participant_age),
+         participant_age = ifelse(participant_age == "75+", "75+y", paste0(participant_age, "y")),
+         contact_age = gsub(" to ", "-", contact_age),
+         contact_age = ifelse(contact_age == "75+", "75+y", paste0(contact_age, "y")))
+
+gt.prem.table <- gt.prem%>%
+  group_by(participant_age)%>%
+  summarise(contact_rate = sum(contact_rate))%>%
+  mutate(country = "Guatemala")
+
+## Prepare GlobalMix data
+gt.gm.table <- gt_combined_count%>%
+  mutate(participant_age = case_when(participant_age == "<5y" ~ "0-4y",
+                                     TRUE ~ participant_age))%>%
+  group_by(participant_age)%>%
+  summarise(contact_rate = mean(total_contact, na.rm = T),
+            sd = sd(total_contact, na.rm = T),
+            n = n())%>%
+  mutate(lower_ci = contact_rate - 1.96 * sd/sqrt(n), # Lower bound of 95% CI
+         upper_ci = contact_rate + 1.96 * sd/sqrt(n), # Upper bound of 95% CI
+         participant_age = factor(participant_age, levels = c("0-4y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y"))) %>%
+  arrange(participant_age)%>%
+  mutate(country = "Guatemala")
+
+# Take midpoint of age group
+gt.prem.table$age_midpoint <- sapply(gt.prem.table$participant_age, get_midpoint)
+gt.gm.table$age_midpoint <- sapply(gt.gm.table$participant_age, get_midpoint)
+
+# Add a data source column
+gt.prem.table <- gt.prem.table%>%
+  mutate(dataset = "Prem et al., 2021",
+         lower_ci = NA,
+         upper_ci = NA)
+gt.gm.table<- gt.gm.table%>%
+  mutate(dataset = "GlobalMix")%>%
+  # mutate(dataset = case_when(study_site.x == "Rural" ~ "GlobalMix, rural",
+  #                            study_site.x == "Urban" ~ "GlobalMix, urban"))%>%
+  ungroup()%>%
+  dplyr::select(participant_age, contact_rate, country, age_midpoint, dataset, lower_ci, upper_ci)
+
+# Combine the datasets
+gt.age.table <- rbind(gt.prem.table, gt.gm.table)%>%
+  mutate(dataset = factor(dataset, levels = c("Prem et al., 2021", "GlobalMix")))
+# mutate(dataset = factor(dataset, levels = c("Prem et al., 2021", "GlobalMix, rural", "GlobalMix, urban")))
+
+# Plot the line graph
+gt.age.plot <- ggplot(gt.age.table, aes(x = age_midpoint, y = contact_rate, color = dataset)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.5, size = 0.7) +
+  scale_x_continuous("Participant age", breaks = seq(0, 75, by = 5)) +
+  #scale_y_continuous("Contact Rate") +
+  #ylim(0,25)+
+  labs(title = "Guatemala",
+       color = "Dataset") +
+  ylab("Contact Rate")+
+  scale_color_manual(values = c("Prem et al., 2021" = "orange", "GlobalMix" = "steelblue3"))+
+  # scale_color_manual(values = c("Prem et al., 2021" = "sienna", "GlobalMix, rural" = 'aquamarine4', "GlobalMix, urban" = "steelblue3"))+
+  theme_minimal()+
+  theme(axis.text = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        title = element_text(size = 20))
+
+## Panel B --------------------------------------------------------------------------
+# Prepare Prem et al. data
+p_gt_school <- prem%>%
+  filter(iso3c == "GTM" & setting == "overall" & location_contact == "school")%>%
+  rename(country = iso3c,
+         participant_age = age_contactor,
+         contact_age = age_cotactee,
+         contact_rate = mean_number_of_contacts)
+
+p_gt_work <- prem%>%
+  filter(iso3c == "GTM" & setting == "overall" & location_contact == "work")%>%
+  rename(country = iso3c,
+         participant_age = age_contactor,
+         contact_age = age_cotactee,
+         contact_rate = mean_number_of_contacts)
+
+p_gt_home <- prem%>%
+  filter(iso3c == "GTM" & setting == "overall" & location_contact == "home")%>%
+  rename(country = iso3c,
+         participant_age = age_contactor,
+         contact_age = age_cotactee,
+         contact_rate = mean_number_of_contacts)
+
+p_gt_other <- prem%>%
+  filter(iso3c == "GTM" & setting == "overall" & location_contact == "others")%>%
+  rename(country = iso3c,
+         participant_age = age_contactor,
+         contact_age = age_cotactee,
+         contact_rate = mean_number_of_contacts)
+
+# Combine the location
+p_gt_home_lab <- p_gt_home%>%
+  mutate(participant_age = gsub(" to ", "-", participant_age),
+         participant_age = ifelse(participant_age == "75+", "75+y", paste0(participant_age, "y")),
+         contact_age = gsub(" to ", "-", contact_age),
+         contact_age = ifelse(contact_age == "75+", "75+y", paste0(contact_age, "y")),
+         location = "Home")
+p_gt_school_lab <- p_gt_school%>%
+  mutate(participant_age = gsub(" to ", "-", participant_age),
+         participant_age = ifelse(participant_age == "75+", "75+y", paste0(participant_age, "y")),
+         contact_age = gsub(" to ", "-", contact_age),
+         contact_age = ifelse(contact_age == "75+", "75+y", paste0(contact_age, "y")),
+         location = "School")
+p_gt_work_lab <- p_gt_work%>%
+  mutate(participant_age = gsub(" to ", "-", participant_age),
+         participant_age = ifelse(participant_age == "75+", "75+y", paste0(participant_age, "y")),
+         contact_age = gsub(" to ", "-", contact_age),
+         contact_age = ifelse(contact_age == "75+", "75+y", paste0(contact_age, "y")),
+         location = "Work")
+p_gt_other_lab <- p_gt_other%>%
+  mutate(participant_age = gsub(" to ", "-", participant_age),
+         participant_age = ifelse(participant_age == "75+", "75+y", paste0(participant_age, "y")),
+         contact_age = gsub(" to ", "-", contact_age),
+         contact_age = ifelse(contact_age == "75+", "75+y", paste0(contact_age, "y")),
+         location = "Other")
+
+p_gt_loc <- rbind(p_gt_home_lab, p_gt_school_lab, p_gt_work_lab, p_gt_other_lab)%>%
+  group_by(location)%>%
+  summarise(contact_rate = sum(contact_rate))%>%
+  mutate(contact_rate_tot = sum(contact_rate),
+         percentage = contact_rate/contact_rate_tot,
+         country = "Guatemala")
+
+## Prepare GlobalMix data
+gt.loc.count <- gt_loc_ed%>%
+  filter(!is.na(num_pax_place))%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age),
+         place_visited = case_when(place_visited == "Other home" ~ "Other",
+                                   place_visited == "Market/essential" ~ "Other",
+                                   place_visited == "Other social/leisure" ~ "Other",
+                                   place_visited == "Transit" ~ "Other",
+                                   place_visited == "Worship" ~ "Other",
+                                   is.na(place_visited) ~ "Unreported",
+                                   TRUE ~ place_visited))%>%
+  rename(location = place_visited,
+         count = num_pax_place)%>%
+  left_join(gt.we.ru, by = c("participant_age", "study_site"))%>%
+  mutate(country = "Guatemala")%>%
+  select(rec_id, participant_age, location, count, study_site, country, psweight)
+
+
+gt_location <- gt.co%>%
+  mutate(location = case_when(location == "Transit" ~ "Other",
+                              location == "Market / essential" ~ "Other",
+                              location == "Other social / leisure" ~ "Other",
+                              location == "Worship" ~ "Other",
+                              TRUE ~ location))%>%
+  left_join(gt.pa, by = "rec_id")%>%
+  rename(study_site = study_site.x)%>%
+  dplyr::select(rec_id, study_site, participant_age, participant_sex, contact_age, contact_sex, location)%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age),
+         count = 1)%>%
+  left_join(gt.we.ru, by = c("participant_age", "study_site"))%>%
+  mutate(country = "Guatemala")%>%
+  select(rec_id, participant_age, location, count, study_site, country, psweight)
+
+gt.loc.comb <- rbind(gt_location, gt.loc.count)
+
+## Exposure-hour version -----------------------------------------------
+### Panel A ---------------------------------------------------
+# Prem data will be the same
+# Prepare GlobalMix data
+gt.gm.eh.table <- gt.co%>%
+  group_by(rec_id, study_day)%>%
+  summarise(ex_hour = sum(cont_time/60))%>%
+  left_join(gt.pa %>% select(rec_id, participant_age), by = "rec_id")%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "0-4y",
+                                     participant_age == "6-11mo" ~ "0-4y",
+                                     participant_age == "1-4y" ~ "0-4y",
+                                     TRUE ~ participant_age))
+
+gt.gm.loc.eh.table <- gt_loc_ed%>%
+  group_by(rec_id, participant_age, study_day)%>%
+  summarise(ex_hour = sum(spent_time*num_pax_place/60))%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "0-4y",
+                                     participant_age == "6-11mo" ~ "0-4y",
+                                     participant_age == "1-4y" ~ "0-4y",
+                                     TRUE ~ participant_age))
+
+
+gt.gm.eh.table.comb <- rbind(gt.gm.eh.table, gt.gm.loc.eh.table)%>%
+  group_by(rec_id, participant_age, study_day)%>%
+  summarise(ex_hour = sum(ex_hour))%>%
+  group_by(participant_age)%>%
+  summarise(mean_eh = mean(ex_hour, na.rm = T),
+            sd = sd(ex_hour, na.rm = T),
+            n = n())%>%
+  mutate(lower_ci = mean_eh - 1.96 * sd/sqrt(n), # Lower bound of 95% CI
+         upper_ci = mean_eh + 1.96 * sd/sqrt(n), # Upper bound of 95% CI
+         participant_age = factor(participant_age, levels = c("0-4y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y"))) %>%
+  filter(!is.na(participant_age))%>%
+  arrange(participant_age)%>%
+  mutate(country = "Guatemala",
+         contact_rate = NA,
+         dataset = "GlobalMix")%>%
+  dplyr::select(participant_age, mean_eh, contact_rate, country, dataset, lower_ci, upper_ci)
+
+# Take midpoint of age group
+gt.gm.eh.table.comb$age_midpoint <- sapply(gt.gm.eh.table.comb$participant_age, get_midpoint)
+
+# Combine the datasets
+gt.eh.comp.table <- gt.prem.table%>%
+  mutate(mean_eh = NA)%>%
+  bind_rows(gt.gm.eh.table.comb)%>%
+  mutate(dataset = factor(dataset, levels = c("Prem et al., 2021", "GlobalMix")))
+# mutate(dataset = factor(dataset, levels = c("Prem et al., 2021", "GlobalMix, rural", "GlobalMix, urban")))
+
+# Plot the line graph
+gt_scale <- max(gt.eh.comp.table$contact_rate, na.rm = TRUE) / 
+  max(gt.eh.comp.table$mean_eh, na.rm = TRUE)
+
+
+gt.eh.comp.plot <- ggplot() +
+  geom_line(data = gt.eh.comp.table %>% filter(!is.na(contact_rate)),
+            aes(x = age_midpoint, y = contact_rate, color = "Prem et al., 2021"),
+            linewidth = 1) +
+  geom_line(data = gt.eh.comp.table %>% filter(!is.na(mean_eh)),
+            aes(x = age_midpoint, y = mean_eh * gt_scale, color = "GlobalMix"),
+            linewidth = 1) +
+  geom_errorbar(data = gt.eh.comp.table %>% filter(!is.na(mean_eh)),
+                aes(x = age_midpoint,
+                    ymin = lower_ci * gt_scale,
+                    ymax = upper_ci * gt_scale),
+                width = 0.5, size = 0.7, color = "steelblue3") +
+  scale_x_continuous("Participant age", breaks = seq(0, 75, by = 5)) +
+  scale_y_continuous(
+    name = "Contact rate (Prem et al., 2021)",
+    sec.axis = sec_axis(~ . / gt_scale, name = "Exposure-hour (GlobalMix)")
+  ) +
+  scale_color_manual(values = c("Prem et al., 2021" = "orange", "GlobalMix" = "steelblue3")) +
+  labs(title = "Guatemala", color = "Dataset") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 15),
+    legend.text = element_text(size = 15),
+    legend.title = element_text(size = 20),
+    axis.title = element_text(size = 20),
+    title = element_text(size = 20)
+  )
+
+
+### Panel B ---------------------------------------------------
+# Prepare GlobalMix data
+gt.loc.eh <- gt_loc_ed%>%
+  filter(!is.na(num_pax_place))%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age),
+         place_visited = case_when(place_visited == "Other home" ~ "Other",
+                                   place_visited == "Market/essential" ~ "Other",
+                                   place_visited == "Other social/leisure" ~ "Other",
+                                   place_visited == "Transit" ~ "Other",
+                                   place_visited == "Worship" ~ "Other",
+                                   is.na(place_visited) ~ "Unreported",
+                                   TRUE ~ place_visited),
+         ex_hour = spent_time*num_pax_place/60)%>%
+  rename(location = place_visited)%>%
+  left_join(gt.we.ru, by = c("participant_age", "study_site"))%>%
+  mutate(country = "Guatemala")%>%
+  select(rec_id, participant_age, location, ex_hour, study_site, country, psweight)
+
+
+gt_eh_location <- gt.co%>%
+  mutate(location = case_when(location == "Transit" ~ "Other",
+                              location == "Market / essential" ~ "Other",
+                              location == "Other social / leisure" ~ "Other",
+                              location == "Worship" ~ "Other",
+                              TRUE ~ location))%>%
+  left_join(gt.pa, by = "rec_id")%>%
+  rename(study_site = study_site.x)%>%
+  dplyr::select(rec_id, study_site, participant_age, participant_sex, contact_age, contact_sex, location, cont_time)%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age),
+         ex_hour = cont_time/60)%>%
+  left_join(gt.we.ru, by = c("participant_age", "study_site"))%>%
+  mutate(country = "Guatemala")%>%
+  select(rec_id, participant_age, location, ex_hour, study_site, country, psweight)
+
+gt.loc.eh.comb <- rbind(gt_eh_location, gt.loc.eh)
+
