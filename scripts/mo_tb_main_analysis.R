@@ -155,20 +155,10 @@ mo.loc_frame_p <- mo.loc_frame2%>%
   right_join(mo.pa.ext, by = c("study_site", "participant_age", "participant_sex"))
 
 
-mo_loc_we <- mo_loc_ed%>%
-  filter(place_visited != "Home")%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age))%>%
-  left_join(mo.we.ru, by = c("participant_age", "study_site"))%>%
-  filter(!is.na(participant_age))%>%
-  as_survey_design(weights = psweight)
-
-mo_loc_agesex <- mo_loc_we%>%
+mo_loc_agesex <- mo_loc_ed%>%
   group_by(participant_age, participant_sex, place_visited, study_site)%>%
-  summarise(count = survey_total(),
-            spent_time = survey_mean(spent_time, na.rm = T))%>%
+  summarise(count = n(),
+            spent_time = mean(spent_time, na.rm = T))%>%
   rename(contact_age = participant_age,
          contact_sex = participant_sex)%>%
   group_by(place_visited, study_site)%>%
@@ -255,7 +245,23 @@ mo_tb_eh_comb <- rbind(mo.co.eh.tbwe, mo_community_tb)%>%
             lower   = eh_mean - 1.96 * se,
             upper   = eh_mean + 1.96 * se)%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")),
-         contact_age = factor(contact_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))
+         contact_age = factor(contact_age, levels = c("60+y", "40-59y","30-39y", "20-29y", "10-19y", "5-9y", "<5y")))
+
+
+## Calculate age assortativity -------
+age_levels <- c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")
+
+mo_age_mat <- mo_tb_eh_comb%>%
+  select(participant_age, contact_age, eh_mean)%>%
+  pivot_wider(names_from = "participant_age", values_from = "eh_mean")%>%
+  arrange(factor(contact_age, levels = age_levels)) %>%
+  select(contact_age, all_of(age_levels))
+
+mo_age_mat$contact_age <- NULL
+rownames(mo_age_mat) <- colnames(mo_age_mat)
+
+mo_age_ass <- sam_index_q(mo_age_mat)
+
 
 ## Plot in bar plot ----
 mo_tb_eh_comb%>%
@@ -267,7 +273,7 @@ mo_tb_eh_comb%>%
     color = "black"
   ) +
   scale_fill_manual(name = "Contact Age",
-                    values = c( "#D6604D","#FDAE61","#91CF60","#7FBFBD","#4393C3","#8073AC","pink")
+                    values = c("pink", "#8073AC","#4393C3","#7FBFBD","#91CF60","#FDAE61","#D6604D")
   ) +
   theme_minimal()+
   theme(axis.text = element_text(size = 14),
@@ -279,7 +285,7 @@ mo_tb_eh_comb%>%
         title = element_text(size = 18)
   )+
   theme(plot.margin = margin(t = 20, r = 10, b = 10, l = 10))+
-  labs(title = "Mozambique, Q = -0.072", x = "Participant age", y = "Proportion of exposure-hours")-> mo.age.eh.plot
+  labs(title = "Mozambique, Q = -0.073", x = "Participant age", y = "Proportion of exposure-hours")-> mo.age.eh.plot
 
 ## Exposure matrix by sex ----
 # Individual contact
@@ -322,6 +328,19 @@ mo_tb_eh_mat_sex <- rbind(mo.co.eh.tbwe2, mo_community_tb2)%>%
             ci_upper = eh_mean + 1.96 * eh_se
   )
 
+
+### Calculate assortativity -------------------------
+mo_sex_mat <- mo_tb_eh_mat_sex%>%
+  select(participant_sex, contact_sex, eh_mean)%>%
+  pivot_wider(names_from = "participant_sex", values_from = "eh_mean")
+
+mo_sex_mat$contact_sex <- NULL
+rownames(mo_sex_mat) <- colnames(mo_sex_mat)
+
+mo_sex_ass <- index_q(mo_sex_mat)
+
+
+### Plot matrix --------------------------------------
 mo_tb_eh_mat_sex%>%
   ggplot(aes(x = participant_sex, y = contact_sex, fill = eh_mean))+
   scale_fill_distiller(palette = "Blues",
@@ -366,28 +385,25 @@ rbind(mo.co.eh.tbwe, mo_community_tb)%>%
   mutate(prop = eh_mean/total)
 
 
-## Calculate assortativity ----
-age_levels <- c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")
 
-mo_age_mat <- mo_tb_eh_comb%>%
-  select(participant_age, contact_age, eh_mean)%>%
-  pivot_wider(names_from = "participant_age", values_from = "eh_mean")%>%
-  arrange(factor(contact_age, levels = age_levels)) %>%
-  select(contact_age, all_of(age_levels))
+mo.co.exp <- mo.co%>%
+  group_by(rec_id, study_day)%>%
+  summarise(contact = n())%>%
+  right_join(mo.pa, by = "rec_id")%>%
+  mutate(contact = replace_na(contact, 0))
 
-mo_age_mat$contact_age <- NULL
-rownames(mo_age_mat) <- colnames(mo_age_mat)
+mo.co.exp%>%
+  group_by(participant_sex)%>%
+  summarise(cr = mean(contact))
 
-mo_age_ass <- sam_index_q(mo_age_mat)
-
-mo_sex_mat <- mo_tb_eh_mat_sex%>%
-  select(participant_sex, contact_sex, eh_mean)%>%
-  pivot_wider(names_from = "participant_sex", values_from = "eh_mean")
-
-mo_sex_mat$contact_sex <- NULL
-rownames(mo_sex_mat) <- colnames(mo_sex_mat)
-
-mo_sex_ass <- index_q(mo_sex_mat)
+mo.loc.exp <- mo_loc_ed%>%
+  group_by(rec_id, study_day)%>%
+  summarise(contact = sum(num_pax_place, na.rm = T))%>%
+  right_join(mo.pa, by = "rec_id")%>%
+  mutate(contact = replace_na(contact, 0))
+mo.loc.exp%>%
+  group_by(participant_sex)%>%
+  summarise(cr = mean(contact))
 
 
 # Figure 3 and Supplemental figure 1: Proportion of exposure-hours for location of community contacts ---------------------------
@@ -644,7 +660,7 @@ mo_str_plot <- ggplot(mo_cont_count, aes(x = survey_date))+
         legend.text = element_text(size = 17),
         plot.background = element_rect(color = "white"))
 
-# Comparison with Prem data -----------------------------------------
+# Suppplemental figure 3 -----------------------------------------
 ## Panel A -------------------------------------------------------
 ## Prepare Prem data
 mo.prem <- prem%>%
@@ -818,127 +834,3 @@ mo_location <- mo.co%>%
   select(rec_id, participant_age, location, count, study_site, country, psweight)
 
 mo.loc.comb <- rbind(mo_location, mo.loc.count)
-
-## Exposure-hour version -----------------------------------------------
-### Panel A ---------------------------------------------------
-# Prem data will be the same
-# Prepare GlobalMix data
-mo.gm.eh.table <- mo.co%>%
-  group_by(rec_id, study_day)%>%
-  summarise(ex_hour = sum(cont_time/60))%>%
-  left_join(mo.pa %>% select(rec_id, participant_age), by = "rec_id")%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "0-4y",
-                                     participant_age == "6-11mo" ~ "0-4y",
-                                     participant_age == "1-4y" ~ "0-4y",
-                                     TRUE ~ participant_age))
-
-mo.gm.loc.eh.table <- mo_loc_ed%>%
-  group_by(rec_id, participant_age, study_day)%>%
-  summarise(ex_hour = sum(spent_time*num_pax_place/60))%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "0-4y",
-                                     participant_age == "6-11mo" ~ "0-4y",
-                                     participant_age == "1-4y" ~ "0-4y",
-                                     TRUE ~ participant_age))
-
-
-mo.gm.eh.table.comb <- rbind(mo.gm.eh.table, mo.gm.loc.eh.table)%>%
-  group_by(rec_id, participant_age, study_day)%>%
-  summarise(ex_hour = sum(ex_hour))%>%
-  group_by(participant_age)%>%
-  summarise(mean_eh = mean(ex_hour, na.rm = T),
-            sd = sd(ex_hour, na.rm = T),
-            n = n())%>%
-  mutate(lower_ci = mean_eh - 1.96 * sd/sqrt(n), # Lower bound of 95% CI
-         upper_ci = mean_eh + 1.96 * sd/sqrt(n), # Upper bound of 95% CI
-         participant_age = factor(participant_age, levels = c("0-4y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y"))) %>%
-  filter(!is.na(participant_age))%>%
-  arrange(participant_age)%>%
-  mutate(country = "Mozambique",
-         contact_rate = NA,
-         dataset = "GlobalMix")%>%
-  dplyr::select(participant_age, mean_eh, contact_rate, country, dataset, lower_ci, upper_ci)
-
-# Take midpoint of age group
-mo.gm.eh.table.comb$age_midpoint <- sapply(mo.gm.eh.table.comb$participant_age, get_midpoint)
-
-# Combine the datasets
-mo.eh.comp.table <- mo.prem.table%>%
-  mutate(mean_eh = NA)%>%
-  bind_rows(mo.gm.eh.table.comb)%>%
-  mutate(dataset = factor(dataset, levels = c("Prem et al., 2021", "GlobalMix")))
-# mutate(dataset = factor(dataset, levels = c("Prem et al., 2021", "GlobalMix, rural", "GlobalMix, urban")))
-
-# Plot the line graph
-mo_scale <- max(mo.eh.comp.table$contact_rate, na.rm = TRUE) / 
-  max(mo.eh.comp.table$mean_eh, na.rm = TRUE)
-
-
-mo.eh.comp.plot <- ggplot() +
-  geom_line(data = mo.eh.comp.table %>% filter(!is.na(contact_rate)),
-            aes(x = age_midpoint, y = contact_rate, color = "Prem et al., 2021"),
-            linewidth = 1) +
-  geom_line(data = mo.eh.comp.table %>% filter(!is.na(mean_eh)),
-            aes(x = age_midpoint, y = mean_eh * mo_scale, color = "GlobalMix"),
-            linewidth = 1) +
-  geom_errorbar(data = mo.eh.comp.table %>% filter(!is.na(mean_eh)),
-                aes(x = age_midpoint,
-                    ymin = lower_ci * mo_scale,
-                    ymax = upper_ci * mo_scale),
-                width = 0.5, size = 0.7, color = "steelblue3") +
-  scale_x_continuous("Participant age", breaks = seq(0, 75, by = 5)) +
-  scale_y_continuous(
-    name = "Contact rate (Prem et al., 2021)",
-    sec.axis = sec_axis(~ . / in_scale, name = "Exposure-hour (GlobalMix)")
-  ) +
-  scale_color_manual(values = c("Prem et al., 2021" = "orange", "GlobalMix" = "steelblue3")) +
-  labs(title = "Mozambique", color = "Dataset") +
-  theme_minimal() +
-  theme(
-    axis.text = element_text(size = 15),
-    legend.text = element_text(size = 15),
-    legend.title = element_text(size = 20),
-    axis.title = element_text(size = 20),
-    title = element_text(size = 20)
-  )
-
-### Panel B ---------------------------------------------------
-# Prepare GlobalMix data
-mo.loc.eh <- mo_loc_ed%>%
-  filter(!is.na(num_pax_place))%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age),
-         place_visited = case_when(place_visited == "Other home" ~ "Other",
-                                   place_visited == "Market/essential" ~ "Other",
-                                   place_visited == "Other social/leisure" ~ "Other",
-                                   place_visited == "Transit" ~ "Other",
-                                   place_visited == "Worship" ~ "Other",
-                                   is.na(place_visited) ~ "Unreported",
-                                   TRUE ~ place_visited),
-         ex_hour = spent_time*num_pax_place/60)%>%
-  rename(location = place_visited)%>%
-  left_join(mo.we.ru, by = c("participant_age", "study_site"))%>%
-  mutate(country = "Mozambique")%>%
-  select(rec_id, participant_age, location, ex_hour, study_site, country, psweight)
-
-
-mo_eh_location <- mo.co%>%
-  mutate(location = case_when(location == "Transit" ~ "Other",
-                              location == "Market / essential" ~ "Other",
-                              location == "Other social / leisure" ~ "Other",
-                              location == "Worship" ~ "Other",
-                              TRUE ~ location))%>%
-  left_join(mo.pa, by = "rec_id")%>%
-  rename(study_site = study_site.x)%>%
-  dplyr::select(rec_id, study_site, participant_age, participant_sex, contact_age, contact_sex, location, cont_time)%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age),
-         ex_hour = cont_time/60)%>%
-  left_join(mo.we.ru, by = c("participant_age", "study_site"))%>%
-  mutate(country = "Mozambique")%>%
-  select(rec_id, participant_age, location, ex_hour, study_site, country, psweight)
-
-mo.loc.eh.comb <- rbind(mo_eh_location, mo.loc.eh)

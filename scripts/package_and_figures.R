@@ -76,23 +76,13 @@ rbind(gt.type.value, in.type.value, mo.type.value, pa.type.value)%>%
 ggarrange(gt.age.eh.plot, in.age.eh.plot, mo.age.eh.plot, pa.age.eh.plot, nrow = 2, ncol = 2, common.legend = T, legend = "right") -> age.plot
 
 # Figure 3: Proportion of exposure-hours by location of community contacts ----------
-## Significant digits formatting function
-format_sig2 <- function(x) {
-  formatted <- signif(x, 2)
-  # Convert to character with conditional formatting
-  sapply(formatted, function(val) {
-    str_val <- format(val, scientific = FALSE, trim = TRUE)
-    # Add trailing zero if only one decimal digit
-    if (grepl("^\\d+\\.\\d$", str_val)) {
-      paste0(str_val, "0")
-    } else {
-      str_val
-    }
-  })
-}
-
-
-rbind(gt_loc_community_eh_comb, in_loc_community_eh_comb, mo_loc_community_eh_comb, pa_loc_community_eh_comb)%>%
+# Overall
+rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_community_eh)%>%
+  group_by(country, place_visited)%>%
+  summarise(ex_hour = sum(ex_hour))%>%
+  group_by(country)%>%
+  mutate(total = sum(ex_hour),
+         prop = ex_hour/total)%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
   theme(axis.text = element_text(size = 16),
         axis.title = element_text(size = 20),
@@ -105,12 +95,12 @@ rbind(gt_loc_community_eh_comb, in_loc_community_eh_comb, mo_loc_community_eh_co
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),    
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),    
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "", y = "Location", title = "Overall")+
+  labs(x = "", y = "", title = "A. Overall")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.plot
 
 
@@ -129,12 +119,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "", y = "Location", title = "<5 years old")+
+  labs(x = "", y = "", title = "B. <5 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.u5.plot
 
 # 5-9y
@@ -161,12 +151,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "", y = "Location", title = "5-9 years old")+
+  labs(x = "", y = "", title = "C. 5-9 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.5to9.plot
 
 # 10-19y
@@ -183,12 +173,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "", y = "", title = "10-19 years old")+
+  labs(x = "", y = "", title = "D. 10-19 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.10to19.plot
 
 # 20-29y
@@ -205,12 +195,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "", y = "Location", title = "20-29 years old")+
+  labs(x = "", y = "", title = "E. 20-29 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.20to29.plot
 
 # 30-39y
@@ -237,12 +227,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "", y = "", title = "30-39 years old")+
+  labs(x = "", y = "", title = "F. 30-39 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.30to39.plot
 
 # 40-59y
@@ -259,12 +249,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "Country", y = "Location", title = "40-59 years old")+
+  labs(x = "", y = "", title = "G. 40-59 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.40to59.plot
 
 # 60+y
@@ -291,12 +281,12 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   geom_tile(color = "white", show.legend = FALSE,
             lwd = 1.5,
             linetype = 1) +
-  geom_shadowtext(aes(label = format_sig2(prop)),  
+  geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
                   size = 8, 
                   bg.r = 0.15) +
-  labs(x = "Country", y = "", title = "60+ years old")+
+  labs(x = "", y = "", title = "H. 60+ years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.m60.plot
 
 ## Combine all the age plot ----
@@ -309,39 +299,22 @@ ggarrange(gt.mat.sex.plot, in.mat.sex.plot, mo.mat.sex.plot, pa.mat.sex.plot, nr
 
 # Supplemental figure 2: Daily number of contacts reported with stringency index ----
 str_plot <- grid.arrange(mo_str_plot, gt_str_plot, in_str_plot, pa_str_plot, ncol = 1, 
-                         #top = textGrob("A", x = 0, just = "left", gp = gpar(fontsize = 30)),
                          left = textGrob("Daily Mean Number of Contacts", rot = 90, just = "centre", gp = gpar(fontsize = 20)),
                          right = textGrob("Stringency Index (Average)", rot = 270, just = "centre", gp = gpar(fontsize = 20)),
                          bottom = textGrob("Survey Date", just = "centre", gp = gpar(fontsize = 20)))
 
 
-# Comparison with Prem data -------------------------------------------------------
-# Panel A
-title_grob <- textGrob("A",
-                       gp = gpar(fontsize = 30, fontface = "bold"),
-                       just = "left",
-                       x = 0.02,
-                       y = 0.5)
-
-age_line_plot <- grid.arrange(gt.age.plot, in.age.plot, mo.age.plot, pa.age.plot,ncol = 2, top = title_grob)
-
-age_line_plot_2 <- (gt.age.plot + in.age.plot) / (mo.age.plot + pa.age.plot) +
+# Supplemental figure 3: Comparison of contact rates with Prem et al. data -------------------------------------------------------
+## Panel A ----------------------
+age_line_plot <- ((gt.age.plot + in.age.plot) / (mo.age.plot + pa.age.plot) +
   plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-
-
-# age_line_plot_2 <- wrap_elements(
-#     full = (
-#       (gt.age.plot + in.age.plot) / (mo.age.plot + pa.age.plot) +
-#         plot_layout(guides = "collect") &
-#         theme(legend.position = "bottom")
-#     )
-#   ) +
-#   plot_annotation(title = title_grob)
+  theme(legend.position = "bottom"))+
+  plot_annotation(title = "A", 
+                  theme = theme(plot.title = element_text(size = 24, hjust = 0.03, face = "bold")))
 
 
         
-# Panel B
+## Panel B ---------------------------
 # Combine four country
 p_com_loc <- rbind(p_gt_loc, p_ind_loc, p_moz_loc,p_pak_loc)%>%
   mutate(location = factor(location, levels = c("Home", "School", "Work", "Other")),
@@ -366,8 +339,7 @@ loc_combined <- rbind(gm_com_loc, p_com_loc)%>%
 loc_combined_plot <- ggplot(loc_combined, aes(x = dataset, y = percentage, fill = location))+
   geom_bar(stat = "identity", position = "fill")+
   facet_wrap(~ country, nrow = 1) +
-  labs(y = "Proportion", x = "Dataset", fill = "Contact location") +
-  #labs(y = "Proportion", x = "Dataset", fill = "Contact location", title = "B") +
+  labs(y = "Proportion", x = "Dataset", fill = "Contact location", title = "B") +
   scale_fill_manual(values = c("Home"="#F8766D",
                                "Market / essential" = "#E69F00",
                                "Other" = "#7CAE00",
@@ -378,7 +350,7 @@ loc_combined_plot <- ggplot(loc_combined, aes(x = dataset, y = percentage, fill 
                                "Unreported" = "#8B4513"))+
   theme_minimal()+
   theme(plot.background = element_rect(fill = "white", color = NA),
-        #plot.title = element_text(hjust = 0, size = 30, face = "bold")
+        plot.title = element_text(hjust = 0, size = 24, face = "bold")
         )+
   theme(axis.text = element_text(size = 15),
         legend.text = element_text(size = 15),
@@ -389,78 +361,7 @@ loc_combined_plot <- ggplot(loc_combined, aes(x = dataset, y = percentage, fill 
         legend.position = "top")
 
 # Two-panel plot
-multi_plot <- age_line_plot_2 | loc_combined_plot
+age_grob <- grid::grid.grabExpr(print(age_line_plot))
+age_element <- wrap_elements(full = age_grob)
 
-
-## Exposure-hours version ------------------------------------
-# Panel A
-# title_grob <- textGrob("A",
-#                        gp = gpar(fontsize = 30, fontface = "bold"),
-#                        just = "left",
-#                        x = 0.02,
-#                        y = 0.5)
-# 
-# age_line_plot <- grid.arrange(gt.eh.comp.plot, in.eh.comp.plot, mo.eh.comp.plot, pa.eh.comp.plot,ncol = 2, top = title_grob)
-
-age_line_plot_eh <- (gt.eh.comp.plot + in.eh.comp.plot) / (mo.eh.comp.plot + pa.eh.comp.plot) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-
-
-
-# Panel B
-# Combine four country
-p_com_loc <- rbind(p_gt_loc, p_ind_loc, p_moz_loc,p_pak_loc)%>%
-  mutate(location = factor(location, levels = c("Home", "School", "Work", "Other")),
-         dataset = "Prem et al., 2021")%>%
-  select(country, location, percentage, dataset)
-
-gm_com_eh_loc <- rbind(gt.loc.eh.comb, in.loc.eh.comb, mo.loc.eh.comb, pa.loc.eh.comb)%>%
-  mutate(location = factor(location, levels = c("Home", "School", "Work", "Other", "Unreported")))%>%
-  filter(!is.na(psweight))%>%
-  filter(!is.na(ex_hour))%>%
-  rename(count = ex_hour)%>%
-  as_survey(weights = c(psweight))%>%
-  group_by(country, location)%>%
-  summarise(count = survey_total(count))%>%
-  mutate(percentage = count/sum(count),
-         dataset = "GlobalMix")%>%
-  select(country, location, percentage, dataset)
-
-# Combine the two datasets
-loc_eh_combined <- rbind(gm_com_eh_loc, p_com_loc)%>%
-  mutate(country = factor(country, levels = c("Guatemala", "India",  "Mozambique", "Pakistan")))
-
-# Plot
-loc_eh_combined_plot <- ggplot(loc_eh_combined, aes(x = dataset, y = percentage, fill = location))+
-  geom_bar(stat = "identity", position = "fill")+
-  facet_wrap(~ country, nrow = 1) +
-  labs(y = "Proportion", x = "Dataset", fill = "Contact location") +
-  #labs(y = "Proportion", x = "Dataset", fill = "Contact location", title = "B") +
-  scale_fill_manual(values = c("Home"="#F8766D",
-                               "Market / essential" = "#E69F00",
-                               "Other" = "#7CAE00",
-                               "School" = "#00BFC4",
-                               "Transit" = "#56B4E9",
-                               "Work" = "#C77CFF",
-                               "Worship" = "#F564E3",
-                               "Unreported" = "#8B4513"))+
-  theme_minimal()+
-  theme(plot.background = element_rect(fill = "white", color = NA),
-        #plot.title = element_text(hjust = 0, size = 30, face = "bold")
-  )+
-  theme(axis.text = element_text(size = 15),
-        legend.text = element_text(size = 15),
-        legend.title = element_text(size = 20),
-        axis.title = element_text(size = 20),
-        #title = element_text(size = 20),
-        strip.text = element_text(size = 20),
-        legend.position = "top")
-
-# Two-panel plot
-multi_eh_plot <- age_line_plot_eh | loc_eh_combined_plot
-
-
-
-# Saving figures
-ggsave("C:/Users/mshiiba/OneDrive - Emory/Emory University/PHPA/GlobalMix/TB-analysis/output/TB-analysis-Share/sfig1.png", plot = mat.sex, dpi = 300, width = 16, height = 12)
+multi_plot <- (age_element | loc_combined_plot)
