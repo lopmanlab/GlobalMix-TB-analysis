@@ -20,7 +20,7 @@ To evaluate patterns and locations of contact relevant to Mtb transmission using
 The protocol that contains the detailed data collection procedure in GlobalMix study is explained in Aguolu et al (2024).<sup>1</sup>
 
 # Description of repository
-This repository contains data, scripts, and codebook.
+This repository contains data and scripts.
 Folders are arranged as follows.
 1. Guatemala
 2. India
@@ -28,10 +28,9 @@ Folders are arranged as follows.
 4. Pakistan
 5. Other
 6. Scripts
-7. Codebook
 
 Each country folder contains 'participants', 'contact diary', and 'casual contact' datasets, which contain information about the study participants, their reported close individual contacts, and their reported casual contacts respectively. The Other folder contains the clean datasets from outside of GlobalMix study used for the analysis.
-The scripts folder has scripts used for the analysis of the "Characterizing social behavior relevant for tuberculosis transmission in four low- and middle-income countries". The Codebook folder contains codebooks explaining the variables in the datasets.
+The scripts folder has scripts used for the analysis of the "Characterizing social behavior relevant for tuberculosis transmission in four low- and middle-income countries". 
 
 The participant, contact diary, and casual contact datasets are named as follows;
 - country-code_participant_data_aim1.RDS
