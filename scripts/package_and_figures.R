@@ -54,20 +54,20 @@ rbind(gt.type.value, in.type.value, mo.type.value, pa.type.value)%>%
   ggplot(aes(x = country, y = mean_eh, fill = hh_membership))+
   geom_bar(position = position_dodge(width = 0.9), stat = "identity")+
   geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci),
-                position = position_dodge(width = 0.9), width = 0.2) +
+                position = position_dodge(width = 0.9), width = 0.1) +
   scale_fill_manual(values = c("Casual" = "tan1", "Close household" = "royalblue1", "Close non-household" = "skyblue1")) +
   #scale_y_continuous(limits = c(0, 100))+
   theme_minimal()+
   theme(plot.margin = margin(t = 20, r = 10, b = 10, l = 10))+
-  theme(axis.title = element_text(size = 18),
-        axis.text = element_text(size = 16),
-        title = element_text(size = 20),
+  theme(axis.title = element_text(size = 9),
+        axis.text = element_text(size = 9),
+        title = element_text(size = 10),
         legend.position = "inside",
-        legend.position.inside = c(0.12, 0.85), 
+        legend.position.inside = c(0.14, 0.85), 
         #legend.justification = c("right", "top"),
         legend.background = element_rect(fill = "white", color = "gray80"),
-        legend.title = element_text(size = 16),
-        legend.text = element_text(size = 14)
+        legend.title = element_text(size = 9),
+        legend.text = element_text(size = 8)
   )+
   labs(x = "Country", y = "Mean daily exposure hours", fill = "Types of contacts") -> mean.type.contact
 
@@ -84,21 +84,21 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   mutate(total = sum(ex_hour),
          prop = ex_hour/total)%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20),
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8),
         plot.background = element_rect(color = "black", linewidth = 2))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),    
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "A. Overall")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.plot
@@ -109,20 +109,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
 rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_community_eh)%>%
   filter(participant_age == "<5y")%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "B. <5 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.u5.plot
@@ -141,20 +141,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
                                                           "Other social/leisure", "School", "Transit","Work", "Worship")))%>%
   filter(participant_age == "5-9y")%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "C. 5-9 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.5to9.plot
@@ -163,20 +163,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
 rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_community_eh)%>%
   filter(participant_age == "10-19y")%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "D. 10-19 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.10to19.plot
@@ -185,20 +185,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
 rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_community_eh)%>%
   filter(participant_age == "20-29y")%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "E. 20-29 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.20to29.plot
@@ -217,20 +217,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   mutate(place_visited = factor(place_visited, levels = c("Other home", "Market/essential", 
                                                           "Other social/leisure", "School", "Transit","Work", "Worship")))%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "F. 30-39 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.30to39.plot
@@ -239,20 +239,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
 rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_community_eh)%>%
   filter(participant_age == "40-59y")%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "G. 40-59 years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.40to59.plot
@@ -271,20 +271,20 @@ rbind(gt_loc_community_eh, in_loc_community_eh, mo_loc_community_eh, pa_loc_comm
   mutate(place_visited = factor(place_visited, levels = c("Other home", "Market/essential", 
                                                           "Other social/leisure", "School", "Transit","Work", "Worship")))%>%
   ggplot(aes(x = country, y = place_visited, fill = pmin(prop, 0.45))) +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        title = element_text(size = 8))+
   scale_fill_distiller(palette = "Blues",
                        direction = 1,
                        #limits=c(0, 5), 
                        name = "Proportion") +
   geom_tile(color = "white", show.legend = FALSE,
-            lwd = 1.5,
+            lwd = 0.5,
             linetype = 1) +
   geom_shadowtext(aes(label = sprintf("%.2f", prop)),  
                   color = "black", 
                   bg.color = "white", 
-                  size = 8, 
+                  size = 3, 
                   bg.r = 0.15) +
   labs(x = "", y = "", title = "H. 60+ years old")+
   scale_x_discrete(labels = label_wrap(10)) -> loc.prop.m60.plot

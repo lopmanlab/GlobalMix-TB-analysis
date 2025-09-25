@@ -294,15 +294,15 @@ in_tb_eh_comb%>%
                     values = c("pink", "#8073AC","#4393C3","#7FBFBD","#91CF60","#FDAE61","#D6604D")
   ) +
   theme_minimal()+
-  theme(axis.text = element_text(size = 14),
-        axis.title = element_text(size = 16),
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 9),
         legend.key.size = unit(0.5, "cm"),
         legend.key = element_rect(fill = "white", colour = "black"),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 12),
-        title = element_text(size = 18)
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 7),
+        title = element_text(size = 9)
   )+
-  theme(plot.margin = margin(t = 20, r = 10, b = 10, l = 10))+
+  theme(plot.margin = margin(t = 10, r = 5, b = 5, l = 5))+
   labs(title = "India, Q = -0.061", x = "Participant age", y = "Proportion of exposure-hours")-> in.age.eh.plot
 
 
