@@ -1,7 +1,12 @@
 # Package
 pacman::p_load(dplyr, ggplot2, tidyr, scales, srvyr, survey, shadowtext, ggpubr, gridExtra, ggpattern, lubridate, patchwork)
 
+# Read common datasets
+stringency <- read.csv("./Other/OxCGRT_compact_national_v1.csv", header = T)
+prem <- read.csv("./Other/synthetic_contacts_2021.csv", header = T)
+
 # Functions
+set.seed(123)
 
 # Calculate assortativity -----------------------------------------------------------
 index_q <- function(m){
@@ -51,6 +56,7 @@ get_midpoint <- function(participant_age) {
 # Summary figures
 # Figure 1: Exposure-hours by type of contact ---------------------------------------
 rbind(gt.type.value, in.type.value, mo.type.value, pa.type.value)%>%
+  filter(!is.na(hh_membership))%>%
   ggplot(aes(x = country, y = mean_eh, fill = hh_membership))+
   geom_bar(position = position_dodge(width = 0.9), stat = "identity")+
   geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci),
@@ -299,9 +305,9 @@ ggarrange(gt.mat.sex.plot, in.mat.sex.plot, mo.mat.sex.plot, pa.mat.sex.plot, nr
 
 # Supplemental figure 2: Daily number of contacts reported with stringency index ----
 str_plot <- grid.arrange(mo_str_plot, gt_str_plot, in_str_plot, pa_str_plot, ncol = 1, 
-                         left = textGrob("Daily Mean Number of Contacts", rot = 90, just = "centre", gp = gpar(fontsize = 20)),
-                         right = textGrob("Stringency Index (Average)", rot = 270, just = "centre", gp = gpar(fontsize = 20)),
-                         bottom = textGrob("Survey Date", just = "centre", gp = gpar(fontsize = 20)))
+                         left = textGrob("Daily Mean Number of Contacts", rot = 90, just = "centre", gp = gpar(fontsize = 10)),
+                         right = textGrob("Stringency Index (Average)", rot = 270, just = "centre", gp = gpar(fontsize = 10)),
+                         bottom = textGrob("Survey Date", just = "centre", gp = gpar(fontsize = 10)))
 
 
 # Supplemental figure 3: Comparison of contact rates with Prem et al. data -------------------------------------------------------
@@ -310,7 +316,7 @@ age_line_plot <- ((gt.age.plot + in.age.plot) / (mo.age.plot + pa.age.plot) +
   plot_layout(guides = "collect") &
   theme(legend.position = "bottom"))+
   plot_annotation(title = "A", 
-                  theme = theme(plot.title = element_text(size = 24, hjust = 0.03, face = "bold")))
+                  theme = theme(plot.title = element_text(size = 10, hjust = 0.03, face = "bold")))
 
 
         
@@ -323,8 +329,8 @@ p_com_loc <- rbind(p_gt_loc, p_ind_loc, p_moz_loc,p_pak_loc)%>%
 
 gm_com_loc <- rbind(gt.loc.comb, in.loc.comb, mo.loc.comb, pa.loc.comb)%>%
   mutate(location = factor(location, levels = c("Home", "School", "Work", "Other", "Unreported")))%>%
-  filter(!is.na(psweight))%>%
-  as_survey(weights = c(psweight))%>%
+  filter(!is.na(final_weight))%>%
+  as_survey(weights = final_weight)%>%
   group_by(country, location)%>%
   summarise(count = survey_total(count))%>%
   mutate(percentage = count/sum(count),
@@ -350,14 +356,14 @@ loc_combined_plot <- ggplot(loc_combined, aes(x = dataset, y = percentage, fill 
                                "Unreported" = "#8B4513"))+
   theme_minimal()+
   theme(plot.background = element_rect(fill = "white", color = NA),
-        plot.title = element_text(hjust = 0, size = 24, face = "bold")
+        plot.title = element_text(hjust = 0, size = 10, face = "bold")
         )+
-  theme(axis.text = element_text(size = 15),
-        legend.text = element_text(size = 15),
-        legend.title = element_text(size = 20),
-        axis.title = element_text(size = 20),
-        #title = element_text(size = 20),
-        strip.text = element_text(size = 20),
+  theme(axis.text = element_text(size = 5.5),
+        legend.text = element_text(size = 7),
+        legend.title = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        #title = element_text(size = 10),
+        strip.text = element_text(size = 10),
         legend.position = "top")
 
 # Two-panel plot
@@ -365,3 +371,21 @@ age_grob <- grid::grid.grabExpr(print(age_line_plot))
 age_element <- wrap_elements(full = age_grob)
 
 multi_plot <- (age_element | loc_combined_plot)
+
+
+# Combined table for casual contact counts
+base_cols <- c("place_visited", "num_pax_place")
+countries <- c("Guatemala", "India", "Mozambique", "Pakistan")
+ordered_cols <- c(
+  base_cols,
+  unlist(lapply(countries, function(cty) {
+    paste0(c("count_", "prop_"), cty)
+  }))
+)
+
+combined_casual <- bind_rows(gt_casual_table, in_casual_table, mo_casual_table, pa_casual_table)%>%
+  pivot_wider(names_from = country,
+              values_from = c(count, prop))%>%
+  select(all_of(ordered_cols))
+
+

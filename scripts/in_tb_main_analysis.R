@@ -4,11 +4,9 @@
 in_locdata <- readRDS("./India/ind_locations_visited_data_aim1.RDS")
 
 in.pa <- readRDS("./India/ind_participant_data_aim1.RDS")
-in.co <- readRDS("./India/ind_contact_data_aim1.RDS")
+in.co.o <- readRDS("./India/ind_contact_data_aim1.RDS")
 in.we.original <- read.csv("./Other/ind_pop.csv")
-
-stringency <- read.csv("./Other/OxCGRT_compact_national_v1.csv", header = T)
-prem <- read.csv("./Other/synthetic_contacts_2021.csv", header = T)
+in.hh <- read.csv("./Other/in_hh.csv")
 
 # Clean the data -------------------------------------------------------------------
 # Standardize the data across countries and merge participants information
@@ -56,7 +54,7 @@ in_loc_ed <- in_locdata%>%
                                 time_visited == "16-30 mins" ~ 23,
                                 time_visited == "31 mins-1 hr" ~ 45 ,
                                 time_visited == "1-4 hrs" ~ 150,
-                                time_visited == ">4 hrs" ~ 240))%>%
+                                time_visited == ">4 hrs" ~ runif(n(), min = 240, max = 840)))%>%
   left_join(in.pa, by = "rec_id")
 
 ## Merge age groups of population data to standardize across countries
@@ -72,6 +70,10 @@ in.we <- in.we.original%>%
                                                               "30-39y", "40-59y", "60+y")))
 
 ## Modify data for analysis ----
+in.co <- in.co.o%>%
+  mutate(cont_time = case_when(cont_time == 240 ~ runif(n(), min = 240, max = 840),
+                               TRUE ~ cont_time))
+
 # Merge the <5y group
 in.pa.age <- in.pa%>%
   mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
@@ -85,66 +87,98 @@ in.co.age <- in.co%>%
                                  contact_age == "1-4y" ~ "<5y",
                                  TRUE ~ contact_age))
 
-## This should be same as four-country paper
-in.co.pa.counts <-  full_join(in.co.age, in.pa.age, 
-                              by = c("rec_id", "study_site")) %>%
-  mutate(contact = ifelse(is.na(survey_date), 0, 1))
-
 ## Number of participants by age and sex ----
 in.pa.age %>%
   filter(!is.na(participant_age)&!is.na(participant_sex))%>%
   count(participant_age, participant_sex) -> denoms.byagesex.in
 
+# Create age and household size weighting design --------------------------------
+# Extract the participant info
+in.pa.we.ext <- in.pa.age%>%
+  select(rec_id, participant_age, hh_size_cat, study_site)%>%
+  distinct()%>%
+  filter(!is.na(participant_age) & !is.na(hh_size_cat))
+
+# Modify the hhsize data
+in.hh.ed <- in.hh%>%
+  select(hhsize_cat, n_individuals)%>%
+  mutate(hhsize_cat = case_when(hhsize_cat == "0–2" ~ "[0,2]",
+                                hhsize_cat == "3–5" ~ "(2,5]",
+                                hhsize_cat == "6–10" ~ "(5,10]",
+                                hhsize_cat == "11+" ~ "(10,50]",
+                                TRUE ~ NA))%>%
+  rename(hh_size_cat = hhsize_cat)
+
+# Base design
+in.base.des <- svydesign(
+  ids = ~1,
+  data = in.pa.we.ext
+)
+
+# Raked design
+in.des.raked <- rake(
+  design = in.base.des,
+  sample.margins = list(
+    ~participant_age + study_site,
+    ~hh_size_cat
+  ),
+  population.margins = list(
+    in.we %>% select(participant_age, study_site, Freq = pop),
+    in.hh.ed  %>% select(hh_size_cat, Freq = n_individuals)
+  )
+)
+
+in.weights <- in.pa.we.ext %>%
+  mutate(final_weight = weights(in.des.raked)) %>%
+  select(rec_id, final_weight)
+
+# Merge back to participant dataset
+in.pa.we <- in.pa.age%>%
+  left_join(in.weights, by = "rec_id")
+
+# Merge to contact count dataset
+in.co.pa.counts <-  full_join(in.co.age, in.pa.we, 
+                              by = c("rec_id", "study_site")) %>%
+  mutate(contact = ifelse(is.na(survey_date), 0, 1))
+
 # Figure 1: Exposure-hours by type of contact -----------------------------------------------
 in.ind.type <- in.co%>%
+  left_join(in.pa.we %>% select(rec_id, final_weight), by = "rec_id") %>%
   group_by(rec_id, study_day, hh_membership)%>%
-  summarise(cont_time = sum(cont_time))%>%
+  summarise(cont_time = sum(cont_time),
+            final_weight = first(final_weight),
+            .groups = "drop")%>%
   mutate(hh_membership = case_when(hh_membership == "Member" ~ "Close household",
                                    hh_membership == "Non-member" ~ "Close non-household"))
 
 in.loc.type <- in_loc_ed%>%
+  left_join(in.pa.we %>% select(rec_id, final_weight), by = "rec_id") %>%
   filter(place_visited != "Home")%>%
   mutate(cont_time = spent_time*num_pax_place)%>%
   group_by(rec_id, study_day)%>%
-  summarise(cont_time = sum(cont_time))%>%
+  summarise(cont_time = sum(cont_time),
+            final_weight = first(final_weight),
+            .groups = "drop")%>%
   mutate(hh_membership = "Casual")
 
 in.type.value <- rbind(in.ind.type, in.loc.type)%>%
+  filter(!is.na(final_weight))%>%
   mutate(ex_hour = cont_time/60)%>% # make minutes from hour
-  group_by(hh_membership)%>%
-  summarise(mean_eh = mean(ex_hour, na.rm = T),
-            sd_eh = sd(ex_hour, na.rm = TRUE),
-            n = sum(!is.na(ex_hour)),
-            se = sd_eh / sqrt(n),
-            lower_ci = mean_eh - 1.96 * se,
-            upper_ci = mean_eh + 1.96 * se
-  )%>%
+  as_survey(weights = final_weight) %>%
+  group_by(hh_membership) %>%
+  summarise(
+    mean_eh = survey_mean(ex_hour, na.rm = TRUE),
+    lower_ci = survey_mean(ex_hour, vartype = "ci", na.rm = TRUE)[[2]],
+    upper_ci = survey_mean(ex_hour, vartype = "ci", na.rm = TRUE)[[3]],
+    n = survey_total())%>%
   mutate(country = "India")
 
-in.type.value.med <- rbind(in.ind.type, in.loc.type)%>%
-  mutate(ex_hour = cont_time/60)%>% # make minutes from hour
-  group_by(hh_membership)%>%
-  summarise(median_eh = median(ex_hour, na.rm = T),
-            lower_percentile = quantile(ex_hour, probs = 0.25, na.rm = T),
-            upper_percentile = quantile(ex_hour, probs = 0.75, na.rm = T))%>%
-  mutate(country = "India")
+
 
 ## Summary figure is in the summary script
 
 # Figure 2 and supp figure 1: Exposure profiles by age and sex --------------------------------------
 ## Calculate age and sex distribution ----
-in.pa.we <- in.pa%>%
-  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
-                                     participant_age == "6-11mo" ~ "<5y",
-                                     participant_age == "1-4y" ~ "<5y",
-                                     TRUE ~ participant_age))%>%
-  group_by(study_site, participant_age)%>%
-  summarise(n_s = n())%>%
-  mutate(prop_s = n_s/sum(n_s))
-
-in.we.ru <- in.we%>%
-  left_join(in.pa.we, by = c("participant_age", "study_site"))%>%
-  mutate(psweight = prop/prop_s)
 
 ## Create a framework for location dataset ----
 in.loc_frame2 <- in_loc_ed%>%
@@ -173,15 +207,20 @@ in.loc_frame_p <- in.loc_frame2%>%
   right_join(in.pa.ext, by = c("study_site", "participant_age", "participant_sex"))
 
 in_loc_agesex <- in_loc_ed%>%
+  left_join(in.pa.we%>%select(rec_id, final_weight), by = "rec_id")%>%
+  filter(!is.na(final_weight))%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_age, participant_sex, place_visited, study_site)%>%
   summarise(count = n(),
-            spent_time = mean(spent_time, na.rm = T))%>%
+            spent_time = survey_total(spent_time, na.rm = T))%>%
   rename(contact_age = participant_age,
          contact_sex = participant_sex)%>%
   group_by(place_visited, study_site)%>%
-  mutate(total_count = sum(count))%>%
+  mutate(total_eh  = sum(spent_time),
+         total_count = sum(count))%>%
   ungroup()%>%
-  mutate(agesex_dist = count/total_count)%>%
+  mutate(agesex_dist = spent_time/total_eh,
+         agesex_dist_cnt = count/total_count)%>%
   right_join(in.loc_frame2, by = c("contact_age", "contact_sex","place_visited", "study_site"))%>%
   mutate(agesex_dist = replace_na(agesex_dist, 0))%>%
   select(participant_age, participant_sex, contact_age, contact_sex, place_visited, study_site, agesex_dist)
@@ -257,13 +296,16 @@ in_tb_eh_comb <- rbind(in.co.eh.tbwe, in_community_tb)%>%
   summarise(eh_we = sum(eh_we, na.rm = T))%>%
   filter(!is.na(contact_age) & !is.na(participant_age))%>%
   ungroup()%>%
+  left_join(in.pa.we %>% select(rec_id, final_weight), by = "rec_id")%>%
+  filter(!is.na(final_weight))%>%
   group_by(participant_age, contact_age)%>%
-  summarise(eh_mean = mean(eh_we, na.rm = T),
-            sd_eh   = sd(eh_we, na.rm = TRUE),
-            n       = n(),
-            se      = sd_eh / sqrt(n),
-            lower   = eh_mean - 1.96 * se,
-            upper   = eh_mean + 1.96 * se)%>%
+  as_survey(weights = final_weight) %>%
+  group_by(participant_age, contact_age) %>%
+  summarise(eh_mean = survey_mean(eh_we, na.rm = TRUE),
+            lower = survey_mean(eh_we, vartype = "ci", na.rm = TRUE)[[2]],
+            upper = survey_mean(eh_we, vartype = "ci", na.rm = TRUE)[[3]],
+            n = survey_total()
+  )%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")),
          contact_age = factor(contact_age, levels = c("60+y", "40-59y","30-39y", "20-29y", "10-19y", "5-9y", "<5y")))
 
@@ -303,10 +345,10 @@ in_tb_eh_comb%>%
         title = element_text(size = 9)
   )+
   theme(plot.margin = margin(t = 10, r = 5, b = 5, l = 5))+
-  labs(title = "India, Q = -0.061", x = "Participant age", y = "Proportion of exposure-hours")-> in.age.eh.plot
+  labs(title = paste0("India, Q = ", signif(in_age_ass, 2)), x = "Participant age", y = "Proportion of exposure-hours")-> in.age.eh.plot
 
 
-## Exposure matrix by sex ----
+# Supplemental figure 1: Exposure matrix by sex ----
 # Individual contact
 in.co.eh.tbwe2 <- in.co.pa.counts%>%
   filter(!is.na(participant_age)&!is.na(participant_sex)&!is.na(contact_age)&!is.na(contact_sex))%>%
@@ -338,14 +380,15 @@ in_tb_eh_mat_sex <- rbind(in.co.eh.tbwe2, in_community_tb2)%>%
   filter(!is.na(study_day))%>%
   group_by(rec_id, participant_sex, contact_sex, study_day)%>%
   summarise(eh_we = sum(eh_we, na.rm = T))%>%
+  left_join(gt.pa.we %>% select(rec_id, final_weight), by = "rec_id")%>%
+  filter(!is.na(final_weight))%>%
   group_by(participant_sex, contact_sex)%>%
-  summarise(eh_mean = mean(eh_we),
-            eh_sd = sd(eh_we),
-            n = n(),
-            eh_se = eh_sd / sqrt(n),
-            ci_lower = eh_mean - 1.96 * eh_se,
-            ci_upper = eh_mean + 1.96 * eh_se
-  )
+  as_survey(weights = final_weight) %>%
+  group_by(participant_sex, contact_sex) %>%
+  summarise(eh_mean = survey_mean(eh_we, na.rm = TRUE),
+            ci_lower = survey_mean(eh_we, vartype = "ci", na.rm = TRUE)[[2]],
+            ci_upper = survey_mean(eh_we, vartype = "ci", na.rm = TRUE)[[3]],
+            n = survey_total())
 
 
 ### Calculate assortativity ---------------------------
@@ -375,14 +418,12 @@ in_tb_eh_mat_sex%>%
                        sprintf("%.1f", ci_upper), ")")),
     color = "black", 
     bg.color = "white", 
-    size = 10, 
+    size = 4, 
     bg.r = 0.15)+
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        title = element_text(size = 18))+
-  labs(title = "India, Q = 0.04", x = "Participant sex", y = "Contact sex") -> in.mat.sex.plot
-
-
+  theme(axis.text = element_text(size = 8),
+        axis.title = element_text(size = 9),
+        title = element_text(size = 10))+
+  labs(title = paste0("India, Q = ", signif(in_sex_ass, 2)), x = "Participant sex", y = "Contact sex") -> in.mat.sex.plot
 
 
 ## Proportion of exposure-hours to women vs men
@@ -392,13 +433,15 @@ rbind(in.co.eh.tbwe, in_community_tb)%>%
   filter(!is.na(contact_sex) & !is.na(participant_age))%>%
   ungroup()%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
+  left_join(in.pa.we %>% select(rec_id, final_weight), by = "rec_id") %>%
+  filter(!is.na(final_weight))%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_age, contact_sex)%>%
-  summarise(eh_mean = mean(eh_we, na.rm = T),
-            sd_eh   = sd(eh_we, na.rm = TRUE),
-            n       = n(),
-            se      = sd_eh / sqrt(n),
-            lower   = eh_mean - 1.96 * se,
-            upper   = eh_mean + 1.96 * se)%>%
+  summarise(eh_mean = survey_mean(eh_we, na.rm = TRUE),
+            lower = survey_mean(eh_we, vartype = "ci", na.rm = TRUE)[[2]],
+            upper = survey_mean(eh_we, vartype = "ci", na.rm = TRUE)[[3]],
+            n = survey_total()
+  )%>%
   group_by(participant_age)%>%
   mutate(total = sum(eh_mean))%>%
   group_by(participant_age, contact_sex)%>%
@@ -409,24 +452,29 @@ rbind(in.co.eh.tbwe, in_community_tb)%>%
 in.co.exp <- in.co%>%
   group_by(rec_id, study_day)%>%
   summarise(contact = n())%>%
-  right_join(in.pa, by = "rec_id")%>%
+  right_join(in.pa.we, by = "rec_id")%>%
   mutate(contact = replace_na(contact, 0))
 
 in.co.exp%>%
+  filter(!is.na(final_weight))%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_sex)%>%
-  summarise(cr = mean(contact))
+  summarise(cr = survey_mean(contact))
 
 in.loc.exp <- in_loc_ed%>%
   group_by(rec_id, study_day)%>%
   summarise(contact = sum(num_pax_place, na.rm = T))%>%
-  right_join(in.pa, by = "rec_id")%>%
+  right_join(in.pa.we, by = "rec_id")%>%
   mutate(contact = replace_na(contact, 0))
+
 in.loc.exp%>%
+  filter(!is.na(final_weight))%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_sex)%>%
-  summarise(cr = mean(contact))
+  summarise(cr = survey_mean(contact))
 
 
-# Figure 3 and Supplemental figure 1: Proportion of exposure-hours for location of community contacts ---------------------------
+# Figure 3: Proportion of exposure-hours for location of community contacts ---------------------------
 denoms.byagesex.loc.in <- in_loc_ed%>%
   filter(place_visited != "Home")%>%
   filter(!is.na(participant_age))%>%
@@ -453,10 +501,16 @@ in_loc_community_eh <- in_loc_ed%>%
   mutate(eh_we = spent_time*num_pax_place*agesex_dist*tb_weight,
          eh_we_low = spent_time*num_pax_place*agesex_dist*tb_lower,
          eh_we_up = spent_time*num_pax_place*agesex_dist*tb_upper)%>%
-  group_by(participant_age, place_visited)%>%
-  summarise(ex_hour = sum(eh_we, na.rm = T),
-            ex_hour_low = sum(eh_we_low, na.rm = T),
-            ex_hour_up = sum(eh_we_up, na.rm = T))%>%
+  left_join(in.pa.we %>% select(rec_id, final_weight), by = "rec_id") %>%
+  filter(!is.na(final_weight))%>%
+  as_survey(weights = final_weight) %>%
+  group_by(participant_age, place_visited) %>%
+  summarise(
+    ex_hour      = survey_total(eh_we, na.rm = TRUE),
+    ex_hour_low  = survey_total(eh_we_low, na.rm = TRUE),
+    ex_hour_up   = survey_total(eh_we_up, na.rm = TRUE),
+    n            = survey_total()
+  ) %>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
   group_by(participant_age)%>%
   mutate(total = sum(ex_hour),
@@ -477,6 +531,21 @@ quantile(in.pa$hh_size, na.rm = T)
 
 ## Number of types of contacts
 sum(in_loc_ed$num_pax_place)
+
+### Count the number of casual contacts by the number of people present -------------------
+in_loc_ed%>%
+  mutate(participant_age = case_when(participant_age == "<6mo" ~ "<5y",
+                                     participant_age == "6-11mo" ~ "<5y",
+                                     participant_age == "1-4y" ~ "<5y",
+                                     TRUE ~ participant_age),
+         num_pax_place = case_when(num_pax_place < 50 ~ "<50",
+                                   num_pax_place >= 50 ~ "50+",
+                                   TRUE ~ NA))%>%
+  filter(!is.na(place_visited) & !is.na(num_pax_place))%>%
+  group_by(place_visited, num_pax_place)%>%
+  summarise(count = n())%>%
+  mutate(prop = count/sum(count)*100)%>%
+  mutate(country = "India") -> in_casual_table
 
 ## Supplemental materials ##
 # Supplemental table 1: Characteristics of participants ---------------------------------
@@ -542,39 +611,39 @@ in.co.pa.full <-  full_join(in.co, in.pa.age,
   mutate(contact = ifelse(is.na(survey_date), 0, 1))%>%
   count(study_day, contact, name = "num_contacts")
 
-in.co.pa <- left_join(in.pa.age, in.co.pa.full, by = "rec_id") %>%
+in.co.pa <- left_join(in.pa.we, in.co.pa.full, by = "rec_id") %>%
   mutate(num_contacts = ifelse(is.na(num_contacts), 0, num_contacts))%>%
-  left_join(in.we.ru%>%select(psweight, participant_age, study_site), by = c("participant_age", "study_site"))%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
-  filter(!is.na(participant_age))
+  filter(!is.na(participant_age) & !is.na(final_weight))
 
 ## Close contacts ----
 # Contact overall
 in.co.pa %>%
-  as_survey(weights = c(psweight))%>%
+  as_survey(weights = final_weight)%>%
   summarise(median = survey_median(num_contacts, na.rm = T),
             n = survey_total(),
             q = survey_quantile(num_contacts, c(0.25, 0.75), na.rm = T))
 
 # By age
 in.co.pa%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_age)%>%
-  summarise(median = median(num_contacts, na.rm = T),
-            lower_q = quantile(num_contacts, 0.25, na.rm = T),
-            upper_q = quantile(num_contacts, 0.75, na.rm = T))
+  summarise(median = survey_median(num_contacts, na.rm = T),
+            q = survey_quantile(num_contacts, c(0.25, 0.75), na.rm = T))
 
 # By sex
 in.co.pa%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_sex)%>%
-  summarise(median = median(num_contacts, na.rm = T),
-            lower_q = quantile(num_contacts, 0.25, na.rm = T),
-            upper_q = quantile(num_contacts, 0.75, na.rm = T))
+  summarise(median = survey_median(num_contacts, na.rm = T),
+            q = survey_quantile(num_contacts, c(0.25, 0.75), na.rm = T))
 
 ### Statistical test for contact's sex difference ------------------------------
 in.co.pa.test <- in.co.pa%>%
-  filter(!is.na(participant_sex))
+  as_survey(weights = final_weight)%>%
+  filter(!is.na(participant_sex) & !is.na(final_weight))
 
-wilcox.test(num_contacts ~ participant_sex, data = in.co.pa.test)
+svyranktest(num_contacts ~ participant_sex, design = in.co.pa.test)
 
 ## Casual contacts ----
 # Contact overall
@@ -586,10 +655,10 @@ in_loc_ed%>%
   group_by(rec_id, study_day, study_site, participant_age)%>%
   summarise(num_pax_place = sum(num_pax_place))%>%
   ungroup()%>%
-  left_join(in.we.ru%>%select(psweight, participant_age, study_site), by = c("participant_age", "study_site"))%>%
+  left_join(in.pa.we%>%select(rec_id, final_weight), by = c("rec_id"))%>%
   mutate(participant_age = factor(participant_age, levels = c("<5y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y")))%>%
   filter(!is.na(participant_age))%>%
-  as_survey(weights = c(psweight))%>%
+  as_survey(weights = final_weight)%>%
   summarise(median = survey_median(num_pax_place, na.rm = T),
             n = survey_total(),
             q = survey_quantile(num_pax_place, c(0.25, 0.75), na.rm = T))
@@ -604,20 +673,22 @@ in_loc_ed%>%
   group_by(rec_id, study_day, study_site, participant_age)%>%
   summarise(num_pax_place = sum(num_pax_place))%>%
   ungroup()%>%
+  left_join(in.pa.we %>% select(c(rec_id, final_weight)), by = "rec_id")%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_age)%>%
-  summarise(median = median(num_pax_place, na.rm = T),
-            lower_q = quantile(num_pax_place, 0.25, na.rm = T),
-            upper_q = quantile(num_pax_place, 0.75, na.rm = T))
+  summarise(median = survey_median(num_pax_place, na.rm = T),
+            q = survey_quantile(num_pax_place, c(0.25, 0.75), na.rm = T))
 
 # By sex
 in_loc_ed%>%
   group_by(rec_id, study_day, study_site, participant_sex)%>%
   summarise(num_pax_place = sum(num_pax_place))%>%
   ungroup()%>%
+  left_join(in.pa.we%>%select(rec_id, final_weight), by = "rec_id")%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_sex)%>%
-  summarise(median = median(num_pax_place, na.rm = T),
-            lower_q = quantile(num_pax_place, 0.25, na.rm = T),
-            upper_q = quantile(num_pax_place, 0.75, na.rm = T))
+  summarise(median = survey_median(num_pax_place, na.rm = T),
+            q = survey_quantile(num_pax_place, c(0.25, 0.75), na.rm = T))
 
 ## Combined contacts ----
 in.svydate <- in.co%>%
@@ -644,7 +715,7 @@ in.co.pa%>%
 
 
 in_combined_count%>%
-  as_survey(weights = c(psweight))%>%
+  as_survey(weights = final_weight)%>%
   summarise(median = survey_median(total_contact, na.rm = T),
             n = survey_total(),
             q = survey_quantile(total_contact, c(0.25, 0.75), na.rm = T))
@@ -673,11 +744,11 @@ in_str_plot <- ggplot(in_cont_count, aes(x = survey_date))+
   xlab(" ")+
   ylab(" ")+
   theme_minimal()+
-  theme(axis.text = element_text(size = 17),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20),
-        strip.text = element_text(size = 20),
-        legend.text = element_text(size = 17),
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        title = element_text(size = 10),
+        strip.text = element_text(size = 10),
+        legend.text = element_text(size = 7),
         plot.background = element_rect(color = "white"))
 
 # Supplemental figure 3 ---------------------------------------------------
@@ -700,16 +771,17 @@ in.prem.table <- in.prem%>%
 
 # Prepare GlobalMix data
 in.gm.table <- in_combined_count%>%
+  filter(!is.na(final_weight))%>%
   mutate(participant_age = case_when(participant_age == "<5y" ~ "0-4y",
                                      TRUE ~ participant_age))%>%
+  as_survey(weights = final_weight)%>%
   group_by(participant_age)%>%
-  summarise(contact_rate = mean(total_contact, na.rm = T),
-            sd = sd(total_contact, na.rm = T),
-            n = n())%>%
-  mutate(lower_ci = contact_rate - 1.96 * sd/sqrt(n), # Lower bound of 95% CI
-         upper_ci = contact_rate + 1.96 * sd/sqrt(n), # Upper bound of 95% CI
-         participant_age = factor(participant_age, levels = c("0-4y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y"))) %>%
+  summarise(contact_rate = survey_mean(total_contact, na.rm = T),
+            q = survey_quantile(total_contact, c(0.25, 0.75), na.rm = T))%>%
+  mutate(participant_age = factor(participant_age, levels = c("0-4y", "5-9y", "10-19y", "20-29y", "30-39y", "40-59y", "60+y"))) %>%
   arrange(participant_age)%>%
+  rename(lower_ci = q_q25,
+         upper_ci = q_q75)%>%
   mutate(country = "India")
 
 # Take midpoint of age group
@@ -736,7 +808,7 @@ in.age.table <- rbind(in.prem.table, in.gm.table)%>%
 # Plot the line graph
 in.age.plot <- ggplot(in.age.table, aes(x = age_midpoint, y = contact_rate, color = dataset)) +
   geom_line(size = 1) +
-  geom_point(size = 2) +
+  geom_point(size = 1.5) +
   geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.5, size = 0.7) +
   scale_x_continuous("Participant age", breaks = seq(0, 75, by = 5)) +
   #scale_y_continuous("Contact Rate") +
@@ -747,11 +819,11 @@ in.age.plot <- ggplot(in.age.table, aes(x = age_midpoint, y = contact_rate, colo
   scale_color_manual(values = c("Prem et al., 2021" = "orange", "GlobalMix" = "steelblue3"))+
   # scale_color_manual(values = c("Prem et al., 2021" = "sienna", "GlobalMix, rural" = 'aquamarine4', "GlobalMix, urban" = "steelblue3"))+
   theme_minimal()+
-  theme(axis.text = element_text(size = 15),
-        legend.text = element_text(size = 15),
-        legend.title = element_text(size = 20),
-        axis.title = element_text(size = 20),
-        title = element_text(size = 20))
+  theme(axis.text = element_text(size = 6),
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 6),
+        axis.title = element_text(size = 7),
+        title = element_text(size = 7))
 
 ## Panel B ---------------------------------------------------------------------------
 # Prepare Prem et al. data
@@ -829,9 +901,9 @@ in.loc.count <- in_loc_ed%>%
                                    TRUE ~ place_visited))%>%
   rename(location = place_visited,
          count = num_pax_place)%>%
-  left_join(in.we.ru, by = c("participant_age", "study_site"))%>%
+  left_join(in.pa.we%>%select(rec_id, final_weight), by = "rec_id")%>%
   mutate(country = "India")%>%
-  select(rec_id, participant_age, location, count, study_site, country, psweight)
+  select(rec_id, participant_age, location, count, study_site, country, final_weight)
 
 
 in_location <- in.co%>%
@@ -848,8 +920,106 @@ in_location <- in.co%>%
                                      participant_age == "1-4y" ~ "<5y",
                                      TRUE ~ participant_age),
          count = 1)%>%
-  left_join(in.we.ru, by = c("participant_age", "study_site"))%>%
+  left_join(gt.pa.we %>% select(rec_id, final_weight), by = c("rec_id"))%>%
   mutate(country = "India")%>%
-  select(rec_id, participant_age, location, count, study_site, country, psweight)
+  select(rec_id, participant_age, location, count, study_site, country, final_weight)
 
 in.loc.comb <- rbind(in_location, in.loc.count)
+
+# Holidays contact rate comparison ----------------------------------------------------
+## Just use the raw contact number for close and casual contacts
+
+# Separate holiday and non-holiday
+in.co.holiday <- in.co%>%
+  filter(survey_date >= as.Date("2022-10-24") & survey_date <= as.Date("2022-10-28")|
+         survey_date == as.Date("2022-10-5")|
+         survey_date >= as.Date("2022-09-26") & survey_date <= as.Date("2022-10-05"))%>%
+  group_by(rec_id, study_day, survey_date)%>%
+  summarise(ind_contact = n())
+
+in.co.normal <- in.co%>%
+  filter(!(survey_date >= as.Date("2022-10-24") & survey_date <= as.Date("2022-10-28")|
+             survey_date == as.Date("2022-10-5")|
+             survey_date >= as.Date("2022-09-26") & survey_date <= as.Date("2022-10-05")))%>%
+  group_by(rec_id, study_day, survey_date)%>%
+  summarise(ind_contact = n())
+
+in.dates <- in.co%>%
+  group_by(rec_id, study_day, survey_date)%>%
+  summarise(count = n())%>%
+  select( - count)
+
+in.loc.holiday <- in_loc_ed%>%
+  left_join(in.dates, by = c("rec_id", "study_day"))%>%
+  filter(survey_date >= as.Date("2022-10-24") & survey_date <= as.Date("2022-10-28")|
+           survey_date == as.Date("2022-10-5")|
+           survey_date >= as.Date("2022-09-26") & survey_date <= as.Date("2022-10-05"))%>%
+  select(rec_id, study_day, survey_date, num_pax_place)
+
+in.loc.normal <- in_loc_ed%>%
+  left_join(in.dates, by = c("rec_id", "study_day"))%>%
+  filter(!(survey_date >= as.Date("2022-10-24") & survey_date <= as.Date("2022-10-28")|
+             survey_date == as.Date("2022-10-5")|
+             survey_date >= as.Date("2022-09-26") & survey_date <= as.Date("2022-10-05")))%>%
+  select(rec_id, study_day, survey_date, num_pax_place)
+
+# Calculate contact rates
+in.survey <- in.pa.age%>%
+  select(rec_id, participant_age)%>%
+  expand_grid(study_day = 1:2)
+
+## rec_id for holiday season survey
+in.hol.id <- in.co.holiday$rec_id
+in.nonhol.id <- in.co.normal$rec_id
+
+# Total contact count
+in.holiday.count <- in.survey%>%
+  filter(rec_id %in% in.hol.id)%>%
+  left_join(in.co.holiday, by = c("rec_id", "study_day"))%>%
+  left_join(in.loc.holiday, by = c("rec_id", "study_day", "survey_date"))%>%
+  mutate(ind_contact = replace_na(ind_contact, 0),
+         num_pax_place = replace_na(num_pax_place, 0))%>%
+  filter(!is.na(survey_date))%>%
+  mutate(total_contact = ind_contact + num_pax_place)
+
+in.normal.count <- in.survey%>%
+  filter(rec_id %in% in.nonhol.id)%>%
+  left_join(in.co.normal, by = c("rec_id", "study_day"))%>%
+  left_join(in.loc.normal, by = c("rec_id", "study_day", "survey_date"))%>%
+  mutate(ind_contact = replace_na(ind_contact, 0),
+         num_pax_place = replace_na(num_pax_place, 0))%>%
+  filter(!is.na(survey_date))%>%
+  mutate(total_contact = ind_contact + num_pax_place)
+
+# Contact rate
+mean(in.holiday.count$total_contact)
+mean(in.normal.count$total_contact)
+
+median(in.holiday.count$ind_contact)
+median(in.normal.count$ind_contact)
+
+median(in.holiday.count$num_pax_place)
+median(in.normal.count$num_pax_place)
+## by age
+in.holiday.count%>%
+  group_by(participant_age)%>%
+  summarise(mean(total_contact))
+in.normal.count%>%
+  group_by(participant_age)%>%
+  summarise(mean(total_contact))
+
+in.holiday.count%>%
+  group_by(participant_age)%>%
+  summarise(median(ind_contact))
+in.normal.count%>%
+  group_by(participant_age)%>%
+  summarise(median(ind_contact))
+
+in.holiday.count%>%
+  group_by(participant_age)%>%
+  summarise(median(num_pax_place))
+in.normal.count%>%
+  group_by(participant_age)%>%
+  summarise(median(num_pax_place))
+
+
